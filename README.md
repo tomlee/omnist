@@ -1,5 +1,8 @@
 # Schema Automaton
 
+[![tests](https://img.shields.io/badge/tests-89%20passing-brightgreen)](tests/)
+[![python](https://img.shields.io/badge/python-3.11%2B-blue)](docs/getting-started.md)
+
 A Python implementation of the **Data Tree** and **Schema Automaton** models and
 schema-computation algorithms from:
 
@@ -10,6 +13,17 @@ schema-computation algorithms from:
 …extended into a **data-format-agnostic** schema engine that can model and
 validate the structure of **JSON, YAML, and TOML** (and XML) data with a single
 canonical schema.
+
+## Documentation
+
+Full docs are in [`docs/`](docs/README.md):
+
+* **[Getting Started](docs/getting-started.md)** — install, run tests, run demos
+* **[Data Model Specification](docs/data-model.md)** — Data Tree, Schema Automaton, Content Model, Value Domain
+* **[User Guide](docs/user-guide.md)** — task-oriented recipes with examples
+* **[Algorithms](docs/algorithms.md)** — the five schema computations
+* **[Design & Limitations](docs/design-and-limitations.md)** — rationale and known limits
+* **[The source paper](docs/paper/Lee-Cheung-2010-XML-Schema-Computations-CIKM.pdf)** (CIKM 2010)
 
 ---
 
