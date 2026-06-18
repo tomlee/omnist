@@ -17,6 +17,7 @@ from src import (
     MapModel, ScalarModel, KIND_MAP, KIND_SEQUENCE, KIND_SCALAR,
     minimize_sa, equivalent_sa, subschema_sa, extract_subschema,
     ITEM, tree_from_python, tree_from_json, infer_schema,
+    to_json_schema,
 )
 
 
@@ -232,6 +233,66 @@ class TestCrossFormat:
 # Subschema extraction on inferred (map-based) schemas
 # ===========================================================================
 
+class TestInferenceEdgeCases:
+    def test_empty_only_array_infers_empty_sequence(self):
+        """An array that is empty in every sample infers to 'empty only';
+        a later non-empty array is rejected (no element type was observed)."""
+        sa = infer_schema([tree_from_python({"x": []})])
+        assert sa.accepts(tree_from_python({"x": []}))
+        assert not sa.accepts(tree_from_python({"x": [1]}))
+
+    def test_inferred_sa_has_no_dangling_symbols(self):
+        """Invariant (Definition 2): every symbol occurring in a state's content
+        language must have a δ transition."""
+        sa = infer_schema([tree_from_python({"a": [1, 2], "b": {"c": "x"}})])
+        for q in sa.states:
+            content = sa.get_content(q)
+            for sym in content.symbols():
+                assert sa.transition(q, sym) is not None, (q, sym)
+
+    def test_mixed_object_and_array_raises(self):
+        with pytest.raises(ValueError):
+            infer_schema([tree_from_python({"v": [1]}),
+                          tree_from_python({"v": {"x": 1}})])
+
+    def test_mixed_scalar_and_object_raises(self):
+        # silent data loss would be a correctness bug — must raise instead
+        with pytest.raises(ValueError):
+            infer_schema([tree_from_python({"v": 1}),
+                          tree_from_python({"v": {"x": 1}})])
+
+    def test_nullable_object_raises(self):
+        # 'object | null' is a union type a single SA state cannot represent
+        with pytest.raises(ValueError):
+            infer_schema([tree_from_python({"v": {"x": 1}}),
+                          tree_from_python({"v": None})])
+
+    def test_deeply_nested(self):
+        t = tree_from_python({"a": {"b": {"c": {"d": [1, 2, 3]}}}})
+        sa = infer_schema([t])
+        assert sa.accepts(t)
+
+    def test_top_level_array(self):
+        # samples are all non-empty → item+ → empty array rejected
+        sa = infer_schema([tree_from_python([{"id": 1}, {"id": 2}])])
+        assert sa.accepts(tree_from_python([{"id": 9}]))
+        assert not sa.accepts(tree_from_python([]))
+
+    def test_array_item_star_when_some_empty(self):
+        # one empty + one non-empty sample → item* → both empty and filled ok
+        sa = infer_schema([tree_from_python({"xs": []}),
+                           tree_from_python({"xs": [1, 2]})])
+        assert sa.accepts(tree_from_python({"xs": []}))
+        assert sa.accepts(tree_from_python({"xs": [7]}))
+
+    def test_minimize_idempotent(self):
+        sa = infer_schema([tree_from_python({"a": 1, "b": "x", "c": [1]})])
+        m1 = minimize_sa(sa)
+        m2 = minimize_sa(m1)
+        assert len(m1.states) == len(m2.states)
+        assert equivalent_sa(m1, m2)
+
+
 class TestMapExtraction:
     def test_extract_drops_optional_field(self):
         trees = [
@@ -243,6 +304,74 @@ class TestMapExtraction:
         extracted = extract_subschema(sa, {"keep"})
         assert extracted.accepts(tree_from_python({"keep": 5}))
         assert not extracted.accepts(tree_from_python({"keep": 5, "drop": 6}))
+
+
+class TestValidateDiagnostics:
+    def _schema(self):
+        return infer_schema([
+            tree_from_python({"host": "a", "port": 1, "tags": ["x"]}),
+            tree_from_python({"host": "b", "port": 2, "tags": ["y", "z"]}),
+        ])
+
+    def test_valid_document(self):
+        sa = self._schema()
+        res = sa.validate(tree_from_python({"host": "h", "port": 9, "tags": ["a"]}))
+        assert res.ok
+        assert bool(res) is True
+
+    def test_missing_required_reported_with_path(self):
+        sa = self._schema()
+        res = sa.validate(tree_from_python({"host": "h", "tags": ["a"]}))
+        assert not res.ok
+        assert any("port" in e.message and e.path == "$" for e in res.errors)
+
+    def test_typed_mismatch_number_as_string(self):
+        sa = self._schema()
+        res = sa.validate(tree_from_python({"host": "h", "port": 1, "tags": [1]}))
+        assert not res.ok
+        assert any(e.path == "$.tags[]" for e in res.errors)
+
+    def test_typed_mismatch_bool_as_int(self):
+        sa = self._schema()
+        res = sa.validate(tree_from_python({"host": "h", "port": True, "tags": ["x"]}))
+        assert not res.ok
+        assert any(e.path == "$.port" for e in res.errors)
+
+    def test_unexpected_key_reported(self):
+        sa = self._schema()
+        res = sa.validate(tree_from_python({"host": "h", "port": 1, "tags": ["x"], "z": 1}))
+        assert not res.ok
+        assert any("unexpected" in e.message for e in res.errors)
+
+
+class TestJsonSchemaExport:
+    def test_object_export(self):
+        sa = infer_schema([
+            tree_from_python({"name": "a", "age": 1}),
+            tree_from_python({"name": "b"}),
+        ])
+        js = to_json_schema(sa)
+        assert js["type"] == "object"
+        assert set(js["properties"]) == {"name", "age"}
+        assert js["required"] == ["name"]            # age optional
+        assert js["additionalProperties"] is False
+
+    def test_array_and_scalar_export(self):
+        sa = infer_schema([tree_from_python({"xs": [1, 2], "label": "k"})])
+        js = to_json_schema(sa)
+        assert js["properties"]["xs"]["type"] == "array"
+        assert js["properties"]["xs"]["items"]["type"] == "integer"
+        assert js["properties"]["xs"]["minItems"] == 1
+        assert js["properties"]["label"]["type"] == "string"
+
+    def test_nullable_and_numeric_export(self):
+        sa = infer_schema([
+            tree_from_python({"v": "s", "n": 1}),
+            tree_from_python({"v": None, "n": 2.5}),
+        ])
+        js = to_json_schema(sa)
+        assert js["properties"]["v"]["type"] == ["string", "null"]
+        assert js["properties"]["n"]["type"] == "number"
 
 
 if __name__ == "__main__":

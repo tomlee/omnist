@@ -193,12 +193,24 @@ class SchemaInferencer:
 
         if len(structural) > 1:
             raise ValueError(
-                f"Heterogeneous structural kinds in one group: {sorted(structural)}"
+                "Cannot infer a single type for a group mixing "
+                f"{sorted(structural)} (union of object and array). "
+                "Union types are not representable by one Schema Automaton state."
             )
 
-        # A structural type may co-occur with scalar nulls (a "T or null" field).
-        # The structural shape wins; scalar nulls are absorbed as nullability of
-        # any scalar leaves and otherwise ignored at the structural level.
+        if structural:
+            # A structural type must not silently coexist with scalar values:
+            # that would be a union type (e.g. 'object | string') which a single
+            # SA state cannot represent. We reject rather than drop data.
+            scalars = [(t, n) for t, n, k in tagged if k == KIND_SCALAR]
+            if scalars:
+                kind = next(iter(structural))
+                raise ValueError(
+                    f"Cannot infer a single type for a group mixing {kind} with "
+                    f"scalar value(s) (e.g. '{kind.lower()} | scalar', including "
+                    "nullable objects/arrays). Union types are not supported."
+                )
+
         if KIND_MAP in structural:
             self._build_map([(t, n) for t, n, k in tagged if k == KIND_MAP], state_id)
         elif KIND_SEQUENCE in structural:
@@ -227,16 +239,22 @@ class SchemaInferencer:
             for e in edges:
                 elements.append((tree, e.child_id))
 
+        if not elements:
+            # Only ever saw empty arrays — we have no evidence of an element
+            # type, so the canonical inference is "the empty sequence only".
+            # (Using item* here would be inconsistent: the content language would
+            # admit `item` while δ has no transition for it, violating Def. 2.)
+            self.sa.add_state(state_id, HLang.epsilon_lang(), VDom.null())
+            return
+
         self.sa.add_state(
             state_id,
             _seq_model(self.item_symbol, plus=not any_empty),
             VDom.null(),
         )
-        if elements:
-            item_state = self._alloc()
-            self.sa.add_transition(state_id, self.item_symbol, item_state)
-            self._build(elements, item_state)
-        # all arrays empty → item* content with no transition needed
+        item_state = self._alloc()
+        self.sa.add_transition(state_id, self.item_symbol, item_state)
+        self._build(elements, item_state)
 
     # ------------------------------------------------------------------
     def _build_map(self, group: List[Tuple[DataTree, Any]], state_id: int) -> None:

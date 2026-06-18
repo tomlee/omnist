@@ -1,5 +1,6 @@
 from .data_tree import DataTree, DNode, DEdge
-from .schema_automaton import SchemaAutomaton
+from .schema_automaton import SchemaAutomaton, ValidationResult, ValidationError
+from .export import to_json_schema
 from .hlang import HLang
 from .vdom import VDom
 from .content_model import (
@@ -27,7 +28,8 @@ from .formats import (
 __all__ = [
     # data model
     "DataTree", "DNode", "DEdge",
-    "SchemaAutomaton",
+    "SchemaAutomaton", "ValidationResult", "ValidationError",
+    "to_json_schema",
     # content models
     "ContentModel", "HLang", "MapModel", "ScalarModel",
     "KIND_MAP", "KIND_SEQUENCE", "KIND_SCALAR",

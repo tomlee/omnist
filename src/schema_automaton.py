@@ -17,7 +17,7 @@ unchanged.
 """
 
 from __future__ import annotations
-from typing import Any, Dict, Optional, Set
+from typing import Any, Dict, List, Optional, Set
 
 from .content_model import ContentModel, ScalarModel
 from .vdom import VDom
@@ -25,6 +25,34 @@ from .data_tree import DataTree
 
 
 _DEAD = None  # sentinel for ⊥ (dead state)
+
+
+class ValidationResult:
+    """Outcome of :meth:`SchemaAutomaton.validate` with path-aware diagnostics."""
+
+    def __init__(self) -> None:
+        self.errors: List["ValidationError"] = []
+
+    @property
+    def ok(self) -> bool:
+        return not self.errors
+
+    def __bool__(self) -> bool:
+        return self.ok
+
+    def __str__(self) -> str:
+        if self.ok:
+            return "valid"
+        return "invalid:\n" + "\n".join(f"  at {e.path}: {e.message}" for e in self.errors)
+
+
+class ValidationError:
+    def __init__(self, path: str, message: str) -> None:
+        self.path = path
+        self.message = message
+
+    def __repr__(self) -> str:
+        return f"ValidationError({self.path!r}, {self.message!r})"
 
 
 class SchemaAutomaton:
@@ -82,6 +110,21 @@ class SchemaAutomaton:
     def get_vdom(self, state: Any) -> VDom:
         return self.vdom.get(state, VDom.strs())
 
+    def _value_ok(self, state: Any, node) -> bool:
+        """Validate a node's value against the state's value domain.
+
+        When the node carries a type hint (``node.vdom`` — set by format loaders
+        for typed JSON/TOML/YAML data), use type-aware admissibility so that,
+        e.g., the number ``1`` is rejected where a string is expected.  Otherwise
+        fall back to string-based containment (the paper's XML/XSD semantics).
+        """
+        schema_vd = self.get_vdom(state)
+        if schema_vd.values is not None:           # enum: decide by value
+            return schema_vd.contains(node.value)
+        if getattr(node, "vdom", None) is not None:  # typed data
+            return schema_vd.admits(node.vdom)
+        return schema_vd.contains(node.value)        # untyped / XML
+
     # ------------------------------------------------------------------
     # Validation: SA accepts DT?  (Definition 3, with optional kind check)
     # ------------------------------------------------------------------
@@ -98,7 +141,7 @@ class SchemaAutomaton:
                 return False
 
             # Condition 2: value must be in VDom(state)
-            if not self.get_vdom(state).contains(n.value):
+            if not self._value_ok(state, n):
                 return False
 
             # Condition 3a: child symbol sequence must be in Content(state)
@@ -116,6 +159,60 @@ class SchemaAutomaton:
             return True
 
         return _check(tree.root_id, self.initial)
+
+    def validate(self, tree: DataTree, item_symbol: str = "[]") -> ValidationResult:
+        """Like :meth:`accepts`, but returns path-aware diagnostics.
+
+        Reports every offending node it can reach (value-domain violations,
+        disallowed/missing children, and unexpected child symbols), each with a
+        JSON-path-like location such as ``$.users[].name``.
+        """
+        result = ValidationResult()
+
+        def _path(parent: str, symbol: str) -> str:
+            if symbol == item_symbol:
+                return f"{parent}[]"
+            return f"{parent}.{symbol}" if parent else symbol
+
+        def _check(node_id: Any, state: Any, path: str) -> None:
+            n = tree.node(node_id)
+            content = self.get_content(state)
+
+            if n.kind is not None and content.kind and n.kind != content.kind:
+                result.errors.append(ValidationError(
+                    path, f"expected {content.kind.lower()} but found {n.kind.lower()}"))
+                return
+
+            if not self._value_ok(state, n):
+                found = f" (found {n.vdom!r})" if getattr(n, "vdom", None) is not None else ""
+                result.errors.append(ValidationError(
+                    path, f"value {n.value!r}{found} not in {self.get_vdom(state)!r}"))
+
+            cseq = tree.child_symbol_sequence(node_id)
+            if not content.accepts(cseq):
+                missing = content.mandatory_symbols() - set(cseq)
+                allowed = content.symbols()
+                unexpected = [s for s in cseq if s not in allowed and s != item_symbol] \
+                    if content.kind == "MAP" else []
+                detail = []
+                if missing:
+                    detail.append(f"missing required {sorted(missing)}")
+                if unexpected:
+                    detail.append(f"unexpected {sorted(set(unexpected))}")
+                msg = "; ".join(detail) if detail else \
+                    f"child sequence {cseq} not permitted by {content!r}"
+                result.errors.append(ValidationError(path, msg))
+
+            for edge in tree.child_edges(node_id):
+                next_state = self.transition(state, edge.symbol)
+                child_path = _path(path, edge.symbol)
+                if next_state is _DEAD:
+                    # already reported as unexpected/illegal above when relevant
+                    continue
+                _check(edge.child_id, next_state, child_path)
+
+        _check(tree.root_id, self.initial, "$")
+        return result
 
     # ------------------------------------------------------------------
     # Display

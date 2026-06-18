@@ -102,6 +102,29 @@ class VDom:
         return False
 
     # ------------------------------------------------------------------
+    # Typed-value admissibility (JSON/TOML/YAML data, where 1 ≠ "1")
+    # ------------------------------------------------------------------
+
+    def admits(self, value_type: "VDom") -> bool:
+        """Can a value whose *type* is ``value_type`` appear in this domain?
+
+        Unlike :meth:`is_subset_of` (which is XSD/string-based, so every integer
+        is also a string), this uses data-format semantics where ``1`` and
+        ``"1"`` are distinct types — needed to validate typed formats faithfully.
+        Enum domains are decided by value, not type, so callers handle those
+        separately via :meth:`contains`.
+        """
+        if value_type.kind == self.NULL:
+            return self.nullable or self.kind == self.NULL
+        if self.values is not None:
+            return True  # enum: type alone is insufficient; value checked elsewhere
+        if value_type.kind == self.kind:
+            return True
+        if value_type.kind == self.INTS and self.kind == self.DECS:
+            return True  # an integer is an admissible number
+        return False
+
+    # ------------------------------------------------------------------
     # Generalisation — least domain covering both (used by schema inference)
     # ------------------------------------------------------------------
 

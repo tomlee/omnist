@@ -98,6 +98,17 @@ Because all formats collapse to the same Data Tree, **a schema inferred from
 JSON samples validates equivalent YAML or TOML data for free**, and any two
 schemas can be compared for equivalence / subschema regardless of origin format.
 
+### Validation diagnostics & schema export
+
+* `schema.accepts(tree)` — fast boolean validation.
+* `schema.validate(tree)` — a `ValidationResult` with path-aware errors
+  (`$.users[].name: value '1' (found VDom(INTS)) not in VDom(STRS)`), including
+  **type-aware** checks so `1` is rejected where a string is expected (in the
+  paper's string-only XML model, `node.vdom` is absent and validation falls back
+  to XSD string semantics).
+* `to_json_schema(schema)` — render an inferred SA as a readable, JSON-Schema-like
+  `dict` for inspection or documentation.
+
 ---
 
 ## 4. Usage
@@ -125,8 +136,15 @@ demo.
 ## 5. Running
 
 ```bash
-python main.py            # demo: paper examples + format-agnostic inference
-python -m pytest tests/   # 72 tests (paper examples + format layer)
+python main.py            # quick tour: paper examples + format-agnostic inference
+python -m pytest tests/   # 89 tests (paper examples + format layer)
+
+# focused, self-contained demos:
+python demos/01_xml_paper_examples.py     # the CIKM 2010 XML examples
+python demos/02_infer_and_validate_json.py# infer + validate + JSON-Schema export
+python demos/03_cross_format.py           # one schema validates JSON / YAML / TOML
+python demos/04_schema_versioning.py      # backward-compatibility via subschema
+python demos/05_subschema_extraction.py   # trim a schema to the keys a client needs
 ```
 
 YAML support needs `pyyaml`; TOML uses the stdlib `tomllib` (Python 3.11+) or
@@ -146,8 +164,21 @@ src/
   schema_automaton.py Schema Automaton (Definition 2) + validation (Definition 3)
   algorithms.py      Algorithms 1–5
   formats.py         JSON/YAML/TOML loaders + schema inference
+  export.py          Schema Automaton → JSON-Schema-like dict
 tests/
   test_paper.py      reproduces the CIKM 2010 examples
-  test_formats.py    map model, loaders, inference, cross-format validation
-main.py              runnable demonstration
+  test_formats.py    map model, loaders, inference, validation, export
+demos/               five runnable, self-contained demos (see §5)
+main.py              quick combined tour
 ```
+
+## 7. Known limitations
+
+* **Union / nullable-complex types.** A single SA state has one content model and
+  one value domain, so it cannot express `object | string` or `object | null`.
+  Schema inference *raises* on such samples rather than silently producing a
+  wrong schema (scalar `null` mixed with a structural type is included in this).
+* **Arrays seen only empty** infer to "empty sequence only" (no element type was
+  observed), so a later non-empty array is rejected.
+* Inference produces **closed** maps (`additionalProperties: false`); open maps
+  are supported by the model (`MapModel(open=True)`) but not inferred.
