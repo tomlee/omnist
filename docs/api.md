@@ -4,6 +4,10 @@ Everything below is importable directly from `dataspec`:
 
 ```python
 from dataspec import Doc, doc, obj, parse_schema, infer, WriteError   # etc.
+
+d = Doc.from_json('{"name": "Ann", "address": {"city": "HK"}}')
+schema = parse_schema("root { name: string, address: { city: string } }")
+schema.validate(d).ok      # True
 ```
 
 ## Documents — the `Doc` API
@@ -124,10 +128,10 @@ The type atoms are namespaced under `t` so they don't shadow Python's `any` or
 the stdlib `datetime` / `date` / `time`.
 
 ```python
-from dataspec import schema, obj, arr, optional, doc, t
+from dataspec import schema, obj, optional, doc, t
 
-s = schema(obj(name=t.string, age=optional(t.integer), tags=arr(t.string)))
-s.validate(doc({"name": "Ann", "tags": ["x"]})).ok        # True
+s = schema(obj(name=t.string, address=optional(obj(city=t.string))))
+s.validate(doc({"name": "Ann", "address": {"city": "HK"}})).ok        # True
 ```
 
 ## Schema types
@@ -156,13 +160,13 @@ The scalar **kind constants** are `STRING`, `INTEGER`, `NUMBER`, `BOOLEAN`,
 `arr.item` attributes.
 
 ```python
-from dataspec import Schema, ObjectType, ScalarType, Field, STRING, INTEGER, doc
+from dataspec import Schema, ObjectType, ScalarType, Field, STRING, doc
 
-schema = Schema(ObjectType({
-    "name": Field(ScalarType({STRING}), required=True),
-    "age":  Field(ScalarType({INTEGER}), required=False),
+s = Schema(ObjectType({
+    "name":    Field(ScalarType({STRING}), required=True),
+    "address": Field(ObjectType({"city": Field(ScalarType({STRING}), required=True)}), required=False),
 }))
-schema.validate(doc({"name": "Ann"})).ok        # True
+s.validate(doc({"name": "Ann"})).ok        # True
 ```
 
 ## Format registry
@@ -188,3 +192,9 @@ All inherit from `DataspecError`, so you can catch everything with one `except`.
 | `WriteError` | a document can't be represented in a target format (`strict=True`); carries `.report` |
 | `DocumentError` | a value isn't a legal Document, or a `Doc` operation is invalid |
 | `DetachedNode` | a `Doc` cursor was used after its node was removed (subclass of `DocumentError`) |
+
+## See also
+
+- [Concepts](concepts.md) — the five ideas this API implements.
+- [Documents](document.md) — the `Doc` API, explained with examples.
+- [Schemas](schema.md) — the schema language and Python builder, explained with examples.
