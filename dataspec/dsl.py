@@ -11,7 +11,9 @@
 
 Forms:
   scalars : string integer number boolean date time datetime null
-  object  : { field: T, optional?: T, ... }      ("..." = open object)
+  any     : any                                   (matches anything)
+  object  : { field: T, optional?: T, ... }       ("..." = open object)
+  map     : { [string]: T }                        (arbitrary keys -> T)
   array   : [T]   [T]+   [T]{m,n}   [T]{n}   [T]{m,}   [T]{,n}
   nullable: T?            (T or null)
   union   : integer | string         enum: "a" | "b"
@@ -26,7 +28,7 @@ from typing import Dict, List, Optional, Tuple
 
 from .errors import SchemaError
 from .schema import (
-    Schema, Type, ScalarType, ArrayType, ObjectType, Field, RefType,
+    Schema, Type, AnyType, ScalarType, ArrayType, ObjectType, Field, RefType,
     STRING, INTEGER, NUMBER, BOOLEAN, DATE, TIME, DATETIME, SCALAR_KINDS,
 )
 
@@ -95,10 +97,12 @@ class _N: pass
 class _Scalar(_N):
     def __init__(self, kind): self.kind = kind
 class _Null(_N): pass
+class _Any(_N): pass
 class _Lit(_N):
     def __init__(self, value): self.value = value
 class _Obj(_N):
-    def __init__(self, fields, open): self.fields = fields; self.open = open
+    def __init__(self, fields, open, rest=None):
+        self.fields = fields; self.open = open; self.rest = rest
 class _Arr(_N):
     def __init__(self, item, lo, hi): self.item = item; self.lo = lo; self.hi = hi
 class _Ref(_N):
@@ -174,15 +178,29 @@ class _Parser:
                 return _Scalar(_KEYWORD_KIND[t.text])
             if t.text == "null":
                 return _Null()
+            if t.text == "any":
+                return _Any()
             return _Ref(t.text)
         raise SchemaError(f"unexpected token {t.text!r} at {t.pos}")
 
     def _object(self):
         self._expect("{")
-        fields, is_open = [], False
+        fields, is_open, rest = [], False, None
         while not self._is("}"):
             if self._peek().kind == "...":
                 self._next(); is_open = True
+                if self._is(","):
+                    self._next()
+                break
+            if self._is("["):
+                # map / index signature:  [string]: T
+                self._next()
+                kw = self._next()
+                if not (kw.kind == "ID" and kw.text == "string"):
+                    raise SchemaError(f"map key type must be 'string' at {kw.pos}")
+                self._expect("]")
+                self._expect(":")
+                rest = self._type()
                 if self._is(","):
                     self._next()
                 break
@@ -199,7 +217,7 @@ class _Parser:
             else:
                 break
         self._expect("}")
-        return _Obj(fields, is_open)
+        return _Obj(fields, is_open, rest)
 
     def _array(self):
         self._expect("[")
@@ -263,11 +281,19 @@ def _build(node: _N) -> Type:
         raise SchemaError("union of structural types is not supported "
                           "(only 'T | null' / 'T?' is allowed)")
     a = alts[0]
+    if isinstance(a, _Any):
+        return AnyType()
     if isinstance(a, _Ref):
         return RefType(a.name, nullable)
     if isinstance(a, _Obj):
         fields = {name: Field(_build(ty), not opt) for name, opt, ty in a.fields}
-        return ObjectType(fields, a.open, nullable)
+        if a.rest is not None:
+            rest = _build(a.rest)
+        elif a.open:
+            rest = AnyType()
+        else:
+            rest = None
+        return ObjectType(fields, rest, nullable)
     if isinstance(a, _Arr):
         return ArrayType(_build(a.item), a.lo, a.hi, nullable)
     raise SchemaError(f"cannot build type from {a!r}")
@@ -293,7 +319,9 @@ def parse_schema(text: str) -> Schema:
     """Parse DSL text into a :class:`Schema`."""
     typedefs, root = _Parser(_tokenize(text)).parse()
     types = {name: _build(node) for name, node in typedefs.items()}
-    return Schema(_build(root), types)
+    schema = Schema(_build(root), types)
+    schema.check_refs()
+    return schema
 
 
 # ===========================================================================
@@ -310,12 +338,16 @@ def to_dsl(schema: Schema) -> str:
 
 def _emit(t: Type) -> str:
     s = _emit_bare(t)
+    if isinstance(t, AnyType):
+        return s  # `any` already includes null
     if t.nullable:
         return f"({s})?" if (isinstance(t, ScalarType) and len(t.kinds) > 1) else f"{s}?"
     return s
 
 
 def _emit_bare(t: Type) -> str:
+    if isinstance(t, AnyType):
+        return "any"
     if isinstance(t, RefType):
         return t.name
     if isinstance(t, ScalarType):
@@ -339,7 +371,9 @@ def _emit_bare(t: Type) -> str:
         for k, f in t.fields.items():
             key = k if k.isidentifier() else '"' + k + '"'
             parts.append(f"{key}{'' if f.required else '?'}: {_emit(f.type)}")
-        if t.open:
+        if isinstance(t.rest, AnyType):
             parts.append("...")
+        elif t.rest is not None:
+            parts.append(f"[string]: {_emit(t.rest)}")
         return "{ " + ", ".join(parts) + " }" if parts else "{}"
     return "?"

@@ -81,6 +81,13 @@ class TestObjects:
         r = valid("root { items: [{ id: integer }] }", {"items": [{"id": "x"}]})
         assert any(p == "$.items[0].id" for p, _ in r.errors)
 
+    def test_error_has_named_fields(self):
+        r = valid("root { a: integer }", {"a": "x"})
+        e = r.errors[0]
+        assert e.path == "$.a" and "integer" in e.message
+        path, message = e          # still unpacks like a tuple
+        assert path == "$.a"
+
 
 class TestArrays:
     def test_zero_or_more(self):
@@ -107,6 +114,32 @@ class TestArrays:
     def test_nullable_array(self):
         assert valid("root [integer]?", None).ok
         assert valid("root [integer]?", [1]).ok
+
+
+class TestMapsAndAny:
+    def test_pure_map(self):
+        s = "root { [string]: integer }"
+        assert valid(s, {"jan": 1, "feb": 2}).ok
+        assert valid(s, {}).ok
+        assert not valid(s, {"jan": "x"}).ok
+
+    def test_named_fields_plus_map_rest(self):
+        s = "root { id: string, [string]: number }"
+        assert valid(s, {"id": "a", "x": 1, "y": 2.5}).ok
+        assert not valid(s, {"id": "a", "x": "no"}).ok   # rest value must be a number
+        assert not valid(s, {"x": 1}).ok                 # id still required
+
+    def test_map_of_objects(self):
+        s = "root { [string]: { lat: number, lon: number } }"
+        assert valid(s, {"a": {"lat": 1.0, "lon": 2.0}}).ok
+        assert not valid(s, {"a": {"lat": 1.0}}).ok
+
+    def test_any_accepts_everything(self):
+        s = "root { name: string, meta: any }"
+        assert valid(s, {"name": "A", "meta": {"x": [1, 2]}}).ok
+        assert valid(s, {"name": "A", "meta": None}).ok
+        assert valid(s, {"name": "A", "meta": 7}).ok
+        assert not valid(s, {"meta": 1}).ok              # name still required
 
 
 class TestNamedAndRecursive:

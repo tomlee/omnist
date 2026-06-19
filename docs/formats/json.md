@@ -1,0 +1,51 @@
+# JSON
+
+JSON is the baseline format. It maps almost exactly onto the Document model, has
+no external dependencies, and uses Python's standard `json` module under the
+hood.
+
+```python
+from dataspec import read_json, write_json
+
+read_json('{"name": "Ann", "tags": ["x", "y"]}')
+# {'name': 'Ann', 'tags': ['x', 'y']}
+
+write_json({"name": "Ann", "n": 1}, indent=2)
+# {
+#   "name": "Ann",
+#   "n": 1
+# }
+```
+
+## What's supported
+
+- Objects, arrays, strings, integers, numbers, booleans, and `null` — the full
+  Document model.
+- Any value can be at the top level: an object, an array, or a bare scalar.
+- `write_json` options: `indent` (pretty-print) and `sort_keys`.
+
+## Limitations
+
+- **No date types.** JSON has no notion of a date. On write, `date`, `time`, and
+  `datetime` values are converted to ISO-8601 strings. On read they come back as
+  strings — schemas with `date` / `time` / `datetime` accept those strings, so
+  validation still works.
+- **Comments aren't allowed** by JSON at all.
+
+## Round-trip behaviour
+
+JSON preserves scalar types exactly: integers stay integers, floats stay floats,
+and numeric-looking strings stay strings.
+
+```python
+d = read_json(write_json({"i": 1, "f": 1.0, "b": True, "s": "1"}))
+# d == {'i': 1, 'f': 1.0, 'b': True, 's': '1'}  (types intact)
+```
+
+A date written to JSON and read back becomes a string, which is the one expected
+asymmetry:
+
+```python
+import datetime
+write_json({"d": datetime.date(2024, 1, 1)})   # '{"d": "2024-01-01"}'
+```

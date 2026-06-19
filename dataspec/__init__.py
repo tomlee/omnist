@@ -17,8 +17,8 @@ validate it against a Schema, and write it back out to any format.
 
 from .errors import DataspecError, SchemaError, ParseError, WriteError
 from .schema import (
-    Schema, ValidationResult,
-    Type, ScalarType, ArrayType, ObjectType, Field, RefType,
+    Schema, ValidationResult, Error,
+    Type, AnyType, ScalarType, ArrayType, ObjectType, Field, RefType,
     STRING, INTEGER, NUMBER, BOOLEAN, DATE, TIME, DATETIME,
 )
 from .dsl import parse_schema, to_dsl
@@ -34,8 +34,8 @@ __all__ = [
     # errors
     "DataspecError", "SchemaError", "ParseError", "WriteError",
     # schema model
-    "Schema", "ValidationResult",
-    "Type", "ScalarType", "ArrayType", "ObjectType", "Field", "RefType",
+    "Schema", "ValidationResult", "Error",
+    "Type", "AnyType", "ScalarType", "ArrayType", "ObjectType", "Field", "RefType",
     "STRING", "INTEGER", "NUMBER", "BOOLEAN", "DATE", "TIME", "DATETIME",
     # dsl
     "parse_schema", "to_dsl",

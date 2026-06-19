@@ -100,6 +100,18 @@ class TestComparison:
         assert a.compatible_with(b)
         assert not b.compatible_with(a)
 
+    def test_compatible_map_value_widening(self):
+        narrow = parse_schema("root { [string]: integer }")
+        wide = parse_schema("root { [string]: number }")
+        assert narrow.compatible_with(wide)
+        assert not wide.compatible_with(narrow)
+
+    def test_anything_is_compatible_with_any(self):
+        concrete = parse_schema("root { a: integer }")
+        anything = parse_schema("root any")
+        assert concrete.compatible_with(anything)
+        assert not anything.compatible_with(concrete)
+
 
 # ----------------------------------------------------------- normalize
 class TestNormalize:

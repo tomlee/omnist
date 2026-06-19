@@ -7,7 +7,7 @@ from typing import Any, List, Optional
 
 from .errors import SchemaError
 from .schema import (
-    Schema, Type, ScalarType, ArrayType, ObjectType, Field,
+    Schema, Type, AnyType, ScalarType, ArrayType, ObjectType, Field,
     STRING, INTEGER, NUMBER, BOOLEAN, DATE, TIME, DATETIME,
 )
 
@@ -69,7 +69,8 @@ def _infer_object(objs, nullable, open_objects) -> ObjectType:
     fields = {}
     for k, vals in by_key.items():
         fields[k] = Field(_infer(vals, open_objects), counts[k] == n)
-    return ObjectType(fields, open=open_objects, nullable=nullable)
+    rest = AnyType() if open_objects else None
+    return ObjectType(fields, rest, nullable=nullable)
 
 
 def _infer_array(arrays, nullable, open_objects) -> ArrayType:

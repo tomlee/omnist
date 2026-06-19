@@ -4,6 +4,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import tomllib
+import pytest
 import dataspec as ds
 from dataspec import Schema, ObjectType, ArrayType, ScalarType, Field, STRING, INTEGER
 
@@ -34,9 +35,23 @@ def test_formats_null_option_c():
     assert tomllib.loads(ds.write_toml({"a": 1, "b": None})) == {"a": 1}
 
 
-def test_quickstart_runs():
+def test_getting_started_map_and_any():
+    # snippets shown in docs/schema.md
+    assert ds.parse_schema("root { [string]: integer }").accepts({"jan": 1, "feb": 2})
+    assert ds.parse_schema("root { name: string, meta: any }").accepts(
+        {"name": "A", "meta": {"x": [1, 2]}})
+
+
+EXAMPLES = [
+    "quickstart.py", "validate_api_payload.py", "convert_formats.py",
+    "infer_and_refine.py", "version_check.py",
+]
+
+
+@pytest.mark.parametrize("name", EXAMPLES)
+def test_example_runs(name):
     import subprocess
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    r = subprocess.run([sys.executable, os.path.join(root, "examples", "quickstart.py")],
+    r = subprocess.run([sys.executable, os.path.join(root, "examples", name)],
                        capture_output=True, text=True, encoding="utf-8")
     assert r.returncode == 0, r.stderr
