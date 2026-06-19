@@ -14,4 +14,13 @@ class ParseError(DataspecError):
 
 
 class WriteError(DataspecError):
-    """A document cannot be represented in the target format."""
+    """A document cannot be represented losslessly in the target format.
+
+    Raised only in ``strict=True`` mode.  ``.report`` holds the full
+    :class:`~dataspec.report.WriteReport` of every adjustment that would have
+    been needed, so callers can inspect the structured list, not just the text.
+    """
+
+    def __init__(self, message: str, report=None):
+        super().__init__(message)
+        self.report = report

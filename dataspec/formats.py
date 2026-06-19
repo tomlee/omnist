@@ -6,29 +6,42 @@ Document, so converting between them is just *read one, write another*::
 
     write_toml(read_json('{"name": "Ann"}'))
 
-Each writer enforces what its format can represent and raises ``WriteError``
-rather than producing something invalid:
+**Conversion is lenient by default.**  When a target format can't hold a value
+losslessly (TOML/XML have no ``null``; JSON has no dates), the writer *adjusts*
+the data and records what it did in a :class:`~dataspec.report.WriteReport`
+rather than raising.  You choose how much you want to know:
 
-* **JSON / YAML** carry everything (incl. ``null``); temporal values downgrade to
-  ISO-8601 strings in JSON.
-* **TOML / XML** have no ``null``: a ``null`` *object field* is **omitted**;
-  a ``null`` *array item* or a *top-level* ``null`` raises ``WriteError``
-  (pass ``strict=True`` to also raise on omitted fields).  TOML/XML also require
-  a top-level object.
+* ``write_toml(doc)`` — just the output; adjustments are made silently.
+* ``write_toml(doc, report=rep)`` — output, plus ``rep`` lists every change.
+* ``check_toml(doc)`` — the report only, no output; nothing is raised.
+* ``write_toml(doc, strict=True)`` — raises ``WriteError`` (carrying the report)
+  if anything can't round-trip, guaranteeing lossless output.
+
+Adjustment knobs:
+
+* ``null_style`` (TOML/XML) — ``"omit"`` (default) flags a dropped *array* item
+  as an error-severity adjustment; ``"drop"`` treats it as an ordinary warning.
+  Null *object fields* are always omitted (warning) either way.
+* ``wrap_key`` (TOML/XML) — the key a top-level array/scalar is wrapped under,
+  since these formats require a top-level object.
 
 YAML is restricted to its JSON-compatible core (string keys, a tree, standard
-scalars).  XML is restricted to data-XML: elements only — no attributes, mixed
-content, namespaces, or CDATA constructs; repeated child names become lists.
-XML scalars are untyped text, so they are read back with best-effort typing.
+scalars); a standalone time-of-day is written as a string.  XML is restricted to
+data-XML: elements only — no attributes, mixed content, namespaces, or CDATA;
+repeated child names become lists.  XML scalars are untyped text, so they are
+read back with best-effort typing.
 """
 
 from __future__ import annotations
 
 import datetime as _dt
 import json as _json
-from typing import Any, Optional
+import math as _math
+import re as _re
+from typing import Any, Optional, Tuple
 
 from .errors import ParseError, WriteError
+from .report import WriteReport
 
 
 # ===========================================================================
@@ -39,9 +52,48 @@ def read_json(text: str) -> Any:
     return _json.loads(text)
 
 
-def write_json(data: Any, *, indent: Optional[int] = None, sort_keys: bool = False) -> str:
-    return _json.dumps(data, indent=indent, sort_keys=sort_keys,
+def write_json(data: Any, *, indent: Optional[int] = None, sort_keys: bool = False,
+               strict: bool = False, report: Optional[WriteReport] = None) -> str:
+    text, rep = _serialize_json(data, indent=indent, sort_keys=sort_keys)
+    return _finish(text, rep, strict, report)
+
+
+def check_json(data: Any) -> WriteReport:
+    """Simulate writing JSON and return the report without producing output."""
+    _text, rep = _serialize_json(data, indent=None, sort_keys=False)
+    return rep
+
+
+def _serialize_json(data: Any, *, indent: Optional[int],
+                    sort_keys: bool) -> Tuple[str, WriteReport]:
+    rep = WriteReport()
+    _scan_json(data, "$", rep)
+    text = _json.dumps(data, indent=indent, sort_keys=sort_keys,
                        ensure_ascii=False, default=_iso)
+    return text, rep
+
+
+def _scan_json(data: Any, path: str, rep: WriteReport) -> None:
+    if isinstance(data, bool):
+        return
+    if isinstance(data, float):
+        if _math.isnan(data) or _math.isinf(data):
+            rep.add(path, "float.special",
+                    f"{data} is not valid JSON (emitted as-is)", "error")
+        return
+    if isinstance(data, (_dt.date, _dt.time)):
+        rep.add(path, "temporal.stringified",
+                "temporal value written as an ISO-8601 string", "warning")
+        return
+    if isinstance(data, dict):
+        for k, v in data.items():
+            if not isinstance(k, str):
+                rep.add(f"{path}.{k}", "key.coerced",
+                        f"non-string key {k!r} coerced to a string", "warning")
+            _scan_json(v, f"{path}.{k}", rep)
+    elif isinstance(data, list):
+        for i, v in enumerate(data):
+            _scan_json(v, f"{path}[{i}]", rep)
 
 
 def _iso(o: Any) -> str:
@@ -64,10 +116,40 @@ def read_yaml(text: str) -> Any:
     return data
 
 
-def write_yaml(data: Any, *, sort_keys: bool = False) -> str:
+def write_yaml(data: Any, *, sort_keys: bool = False,
+               strict: bool = False, report: Optional[WriteReport] = None) -> str:
+    text, rep = _serialize_yaml(data, sort_keys=sort_keys)
+    return _finish(text, rep, strict, report)
+
+
+def check_yaml(data: Any) -> WriteReport:
+    """Simulate writing YAML and return the report without producing output."""
+    _text, rep = _serialize_yaml(data, sort_keys=False)
+    return rep
+
+
+def _serialize_yaml(data: Any, *, sort_keys: bool) -> Tuple[str, WriteReport]:
+    rep = WriteReport()
+    prepared = _yaml_prepare(data, "$", rep)
     yaml = _need("yaml", "PyYAML", "pip install pyyaml")
-    return yaml.safe_dump(data, sort_keys=sort_keys, allow_unicode=True,
+    text = yaml.safe_dump(prepared, sort_keys=sort_keys, allow_unicode=True,
                           default_flow_style=False)
+    return text, rep
+
+
+def _yaml_prepare(data: Any, path: str, rep: WriteReport) -> Any:
+    # YAML carries dates/datetimes natively; only a standalone time has no
+    # representation, so it downgrades to a string.
+    if isinstance(data, _dt.time):
+        rep.add(path, "temporal.stringified",
+                "time-of-day written as a string (YAML has no standalone time)",
+                "warning")
+        return data.isoformat()
+    if isinstance(data, dict):
+        return {k: _yaml_prepare(v, f"{path}.{k}", rep) for k, v in data.items()}
+    if isinstance(data, list):
+        return [_yaml_prepare(v, f"{path}[{i}]", rep) for i, v in enumerate(data)]
+    return data
 
 
 def _yaml_core_check(node: Any, path: str, seen: set) -> None:
@@ -99,36 +181,72 @@ def read_toml(text: str) -> Any:
     return toml.loads(text)
 
 
-def write_toml(data: Any, *, strict: bool = False) -> str:
+def write_toml(data: Any, *, strict: bool = False,
+               report: Optional[WriteReport] = None,
+               null_style: str = "omit", wrap_key: str = "value") -> str:
+    text, rep = _serialize_toml(data, null_style=null_style, wrap_key=wrap_key)
+    return _finish(text, rep, strict, report)
+
+
+def check_toml(data: Any, *, null_style: str = "omit",
+               wrap_key: str = "value") -> WriteReport:
+    """Simulate writing TOML and return the report without producing output."""
+    _text, rep = _serialize_toml(data, null_style=null_style, wrap_key=wrap_key)
+    return rep
+
+
+def _serialize_toml(data: Any, *, null_style: str,
+                    wrap_key: str) -> Tuple[str, WriteReport]:
+    rep = WriteReport()
+    body = _strip_nulls(data, "$", rep, null_style)
+    if body is None:
+        rep.add("$", "null.toplevel.empty",
+                "top-level null written as an empty document", "error")
+        body = {}
+    if not isinstance(body, dict):
+        rep.add("$", "toplevel.wrapped",
+                f"top-level {_name(body)} wrapped under {wrap_key!r} "
+                "(TOML needs a top-level object)", "warning")
+        body = {wrap_key: body}
     tomli_w = _need("tomli_w", "tomli_w", "pip install tomli_w")
-    clean = _drop_nulls(data, "$", strict)
-    if not isinstance(clean, dict):
-        raise WriteError("TOML needs a top-level object; "
-                         f"got {_name(clean)}")
-    return tomli_w.dumps(clean)
+    return tomli_w.dumps(body), rep
 
 
-def _drop_nulls(data: Any, path: str, strict: bool) -> Any:
-    """Apply null Option C: omit null object-fields; reject null in arrays / top."""
-    if data is None:
-        raise WriteError(f"null at {path} cannot be represented (TOML/XML have no null)")
+def _strip_nulls(data: Any, path: str, rep: WriteReport, null_style: str) -> Any:
+    """Remove nulls for formats that have none (TOML/XML), recording each removal.
+
+    Null *object fields* are omitted (warning).  Null *array items* are dropped;
+    that shifts positions, so it is an error-severity adjustment under
+    ``null_style="omit"`` and an ordinary warning under ``"drop"``.
+    """
     if isinstance(data, dict):
         out = {}
         for k, v in data.items():
             if v is None:
-                if strict:
-                    raise WriteError(f"null field at {path}.{k} (strict mode)")
-                continue  # omit
-            out[k] = _drop_nulls(v, f"{path}.{k}", strict)
+                rep.add(f"{path}.{k}", "null.field.omitted",
+                        "null object field omitted", "warning")
+                continue
+            out[k] = _strip_nulls(v, f"{path}.{k}", rep, null_style)
         return out
     if isinstance(data, list):
-        return [_drop_nulls(v, f"{path}[{i}]", strict) for i, v in enumerate(data)]
+        out = []
+        for i, v in enumerate(data):
+            if v is None:
+                sev = "warning" if null_style == "drop" else "error"
+                rep.add(f"{path}[{i}]", "null.item.dropped",
+                        "null array item dropped (shifts positions)", sev)
+                continue
+            out.append(_strip_nulls(v, f"{path}[{i}]", rep, null_style))
+        return out
     return data
 
 
 # ===========================================================================
 # XML  (data-XML profile)
 # ===========================================================================
+
+_XML_NAME = _re.compile(r"^[A-Za-z_][A-Za-z0-9_.\-]*$")
+
 
 def read_xml(text: str) -> Any:
     """Read data-XML into a Document.  The root element is a wrapper; its content
@@ -141,16 +259,40 @@ def read_xml(text: str) -> Any:
     return _xml_to_data(root, "$")
 
 
-def write_xml(data: Any, *, root: str = "root", strict: bool = False) -> str:
-    clean = _drop_nulls(data, "$", strict)
-    if isinstance(clean, list):
-        raise WriteError("XML cannot represent a top-level array (lists must be named "
-                         "fields)")
+def write_xml(data: Any, *, root: str = "root", strict: bool = False,
+              report: Optional[WriteReport] = None,
+              null_style: str = "omit", wrap_key: str = "value") -> str:
+    text, rep = _serialize_xml(data, root=root, null_style=null_style,
+                               wrap_key=wrap_key)
+    return _finish(text, rep, strict, report)
+
+
+def check_xml(data: Any, *, root: str = "root", null_style: str = "omit",
+              wrap_key: str = "value") -> WriteReport:
+    """Simulate writing XML and return the report without producing output."""
+    _text, rep = _serialize_xml(data, root=root, null_style=null_style,
+                                wrap_key=wrap_key)
+    return rep
+
+
+def _serialize_xml(data: Any, *, root: str, null_style: str,
+                   wrap_key: str) -> Tuple[str, WriteReport]:
+    rep = WriteReport()
+    body = _strip_nulls(data, "$", rep, null_style)
+    if body is None:
+        rep.add("$", "null.toplevel.empty",
+                "top-level null written as an empty element", "error")
+        body = {}
+    if isinstance(body, list):
+        rep.add("$", "toplevel.wrapped",
+                f"top-level array wrapped under {wrap_key!r} "
+                "(XML needs a top-level element)", "warning")
+        body = {wrap_key: body}
     import xml.etree.ElementTree as ET
     el = ET.Element(root)
-    _data_to_xml(clean, el)
+    _data_to_xml(body, el, "$", rep)
     _indent(el)
-    return ET.tostring(el, encoding="unicode")
+    return ET.tostring(el, encoding="unicode"), rep
 
 
 def _xml_to_data(elem, path: str) -> Any:
@@ -175,27 +317,57 @@ def _xml_to_data(elem, path: str) -> Any:
     return _coerce(elem.text or "")
 
 
-def _data_to_xml(data: Any, parent) -> None:
+def _data_to_xml(data: Any, parent, path: str, rep: WriteReport) -> None:
     import xml.etree.ElementTree as ET
     if isinstance(data, dict):
         for k, v in data.items():
+            tag = _xml_name(str(k), f"{path}.{k}", rep)
             if isinstance(v, list):
-                for item in v:
-                    child = ET.SubElement(parent, k)
-                    _data_to_xml(item, child)
+                for i, item in enumerate(v):
+                    child = ET.SubElement(parent, tag)
+                    _xml_child(item, child, f"{path}.{k}[{i}]", rep)
             else:
-                child = ET.SubElement(parent, k)
-                _data_to_xml(v, child)
+                child = ET.SubElement(parent, tag)
+                _data_to_xml(v, child, f"{path}.{k}", rep)
     elif isinstance(data, list):
-        raise WriteError("a bare/nested array has no element name in XML")
+        # A list reaching a scalar position (e.g. nested array): wrap each item
+        # in a synthetic <item> element.  Not unambiguously reversible.
+        for i, item in enumerate(data):
+            child = ET.SubElement(parent, "item")
+            rep.add(f"{path}[{i}]", "array.nested.ambiguous",
+                    "nested array wrapped in <item> elements", "error")
+            _xml_child(item, child, f"{path}[{i}]", rep)
     else:
-        parent.text = _xml_text(data)
+        parent.text = _xml_text(data, path, rep)
 
 
-def _xml_text(v: Any) -> str:
+def _xml_child(item: Any, child, path: str, rep: WriteReport) -> None:
+    if isinstance(item, list):
+        rep.add(path, "array.nested.ambiguous",
+                "nested array wrapped in <item> elements", "error")
+        _data_to_xml({"item": item}, child, path, rep)
+    else:
+        _data_to_xml(item, child, path, rep)
+
+
+def _xml_name(k: str, path: str, rep: WriteReport) -> str:
+    if _XML_NAME.match(k):
+        return k
+    safe = _re.sub(r"[^A-Za-z0-9_.\-]", "_", k)
+    if not safe or not _XML_NAME.match(safe):
+        safe = "_" + safe
+    rep.add(path, "key.sanitized",
+            f"key {k!r} is not a valid XML name; written as {safe!r}", "warning")
+    return safe
+
+
+def _xml_text(v: Any, path: str, rep: WriteReport) -> str:
     if isinstance(v, bool):
         return "true" if v else "false"
     if isinstance(v, (_dt.date, _dt.time)):
+        rep.add(path, "temporal.stringified",
+                "temporal value written as text (reads back as a string)",
+                "warning")
         return v.isoformat()
     return str(v)
 
@@ -249,6 +421,15 @@ def _xml_parser():
 # ===========================================================================
 # shared
 # ===========================================================================
+
+def _finish(text: str, rep: WriteReport, strict: bool,
+            report: Optional[WriteReport]) -> str:
+    if report is not None:
+        report.extend(rep)
+    if strict and rep.adjustments:
+        raise WriteError(str(rep), report=rep)
+    return text
+
 
 def _need(module: str, name: str, how: str):
     try:

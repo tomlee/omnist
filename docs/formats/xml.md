@@ -40,21 +40,26 @@ print(write_xml({"name": "Ann", "age": 30}, root="person"))
 
 - Objects and (named) arrays nested to any depth.
 - Scalars as element text.
-- The `null` rule shared with TOML: a `null` field is omitted; a `null` array
-  item or top-level `null` is a `WriteError` (`strict=True` also rejects omitted
-  fields).
+- The same `null` handling as TOML: a `null` field is omitted (`warning`); a
+  `null` array item is dropped (`error`); a top-level `null` becomes an empty
+  element (`error`). `strict=True` raises on any of these.
 
 ## Limitations
 
-The profile is intentionally small. These are **not** part of the model:
+Two kinds of limitation. **On read**, input outside the data-XML profile is
+rejected (or, for namespaces, normalized). **On write**, shapes XML can't hold
+natively are adjusted and reported — lenient by default, like the other formats;
+use `report=`, `check_xml(doc)`, or `strict=True` to see or forbid them.
 
-| Not supported | Behaviour |
-|---|---|
-| Attributes (`<a x="1">`) | `ParseError` on read |
-| Mixed content (text *and* elements together) | `ParseError` on read |
-| Namespaces | the prefix is **stripped** (`<n:a>` reads as `a`) |
-| Top-level array | `WriteError` — the root must be an object |
-| Nested / bare arrays (array of arrays) | `WriteError` — a list needs a tag name |
+| Limitation | When | Behaviour |
+|---|---|---|
+| Attributes (`<a x="1">`) | read | `ParseError` |
+| Mixed content (text *and* elements together) | read | `ParseError` |
+| Namespaces | read | prefix **stripped** (`<n:a>` reads as `a`) |
+| Top-level array/scalar | write | wrapped under `wrap_key` (default `"value"`), reported |
+| Nested / bare arrays (array of arrays) | write | wrapped in `<item>` elements, reported as `error` |
+| Object key that isn't a legal XML name | write | sanitized (e.g. `"a b"` → `<a_b>`), reported |
+| Date / time | write | written as text, reported (reads back as a string) |
 
 If your XML uses attributes, transform it first (for example with XSLT) into an
 attribute-free shape, then read that.

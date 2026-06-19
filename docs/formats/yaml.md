@@ -42,8 +42,10 @@ plain Document:
 Other advanced YAML (custom tags like `!!python/...`, etc.) never appears because
 the safe loader doesn't produce it.
 
-Standalone **time-of-day** values (`datetime.time`) have no native YAML form; if
-you need them, convert to a string first.
+Standalone **time-of-day** values (`datetime.time`) have no native YAML form, so
+on write they're converted to a string and reported as a `temporal.stringified`
+warning (`check_yaml(doc)` shows it). Dates and datetimes are unaffected — YAML
+writes those natively.
 
 ## Round-trip behaviour
 

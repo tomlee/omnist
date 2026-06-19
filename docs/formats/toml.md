@@ -30,22 +30,32 @@ tomllib.loads(out)["created"]       # datetime.datetime(2024, 1, 1, 12, 0)
 
 ## Limitations
 
-- **No `null`.** TOML has no null value. dataspec applies the standard rule:
-  a `null` object field is **omitted**; a `null` array item or a top-level
-  `null` raises `WriteError`. Use `write_toml(doc, strict=True)` to also reject
-  omitted fields.
+Conversion is lenient by default: each limitation below is *adjusted and
+reported* rather than raised. Pass `report=` to see the adjustments, call
+`check_toml(doc)` to inspect without writing, or pass `strict=True` to turn any
+adjustment into a `WriteError`.
+
+- **No `null`.** A `null` object field is **omitted** (`warning`); a `null` array
+  item is **dropped** (`error` — it shifts positions); a top-level `null` becomes
+  an empty document (`error`). `null_style="drop"` demotes the array case to a
+  warning.
 
   ```python
   import tomllib
-  from dataspec import write_toml
+  from dataspec import write_toml, check_toml
   tomllib.loads(write_toml({"a": 1, "b": None}))   # {'a': 1}  -- b dropped
-  write_toml({"xs": [1, None, 2]})                 # WriteError
+  tomllib.loads(write_toml({"xs": [1, None, 2]}))  # {'xs': [1, 2]}
+  check_toml({"xs": [1, None, 2]}).errors          # [Adjustment(..., 'null.item.dropped', ...)]
+  write_toml({"xs": [1, None, 2]}, strict=True)    # WriteError
   ```
 
-- **The top level must be an object.** A bare array or scalar can't be written:
+- **The top level must be an object.** A bare array or scalar is wrapped under a
+  key (`wrap_key`, default `"value"`):
 
   ```python
-  write_toml([1, 2, 3])               # WriteError: TOML needs a top-level object
+  write_toml([1, 2, 3])                       # 'value = [1, 2, 3]\n'
+  write_toml([1, 2, 3], wrap_key="items")     # 'items = [1, 2, 3]\n'
+  write_toml([1, 2, 3], strict=True)          # WriteError
   ```
 
 - **Comments aren't preserved.** TOML allows comments, but they aren't part of
@@ -54,5 +64,7 @@ tomllib.loads(out)["created"]       # datetime.datetime(2024, 1, 1, 12, 0)
 ## Round-trip behaviour
 
 For any Document that TOML can represent, data and types are preserved exactly,
-including dates. The only lossy case is `null` fields, which is why writing one
-is reported (or, by default, dropped) rather than guessed at.
+including dates. The lossy cases — dropped nulls and top-level wrapping — are
+exactly the adjustments the report lists, so `check_toml(doc)` (or
+`write_toml(doc, strict=True)`) tells you up front whether a given Document
+round-trips perfectly.

@@ -16,6 +16,7 @@ validate it against a Schema, and write it back out to any format.
 """
 
 from .errors import DataspecError, SchemaError, ParseError, WriteError
+from .report import WriteReport, Adjustment
 from .schema import (
     Schema, ValidationResult, Error,
     Type, AnyType, ScalarType, ArrayType, ObjectType, Field, RefType,
@@ -24,15 +25,17 @@ from .schema import (
 from .dsl import parse_schema, to_dsl
 from .infer import infer
 from .formats import (
-    read_json, write_json,
-    read_yaml, write_yaml,
-    read_toml, write_toml,
-    read_xml, write_xml,
+    read_json, write_json, check_json,
+    read_yaml, write_yaml, check_yaml,
+    read_toml, write_toml, check_toml,
+    read_xml, write_xml, check_xml,
 )
 
 __all__ = [
     # errors
     "DataspecError", "SchemaError", "ParseError", "WriteError",
+    # serialization reports
+    "WriteReport", "Adjustment",
     # schema model
     "Schema", "ValidationResult", "Error",
     "Type", "AnyType", "ScalarType", "ArrayType", "ObjectType", "Field", "RefType",
@@ -42,8 +45,10 @@ __all__ = [
     # operations
     "infer",
     # formats
-    "read_json", "write_json", "read_yaml", "write_yaml",
-    "read_toml", "write_toml", "read_xml", "write_xml",
+    "read_json", "write_json", "check_json",
+    "read_yaml", "write_yaml", "check_yaml",
+    "read_toml", "write_toml", "check_toml",
+    "read_xml", "write_xml", "check_xml",
 ]
 
 __version__ = "0.1.0"

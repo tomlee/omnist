@@ -14,15 +14,27 @@ Document and returns a **string**.
 | Function | Notes |
 |---|---|
 | `read_json(text)` | — |
-| `write_json(doc, *, indent=None, sort_keys=False)` | `indent` pretty-prints |
+| `write_json(doc, *, indent=None, sort_keys=False, strict=False, report=None)` | `indent` pretty-prints |
+| `check_json(doc)` | simulate the write; return a `WriteReport`, no output |
 | `read_yaml(text)` | needs `pyyaml` |
-| `write_yaml(doc, *, sort_keys=False)` | needs `pyyaml` |
+| `write_yaml(doc, *, sort_keys=False, strict=False, report=None)` | needs `pyyaml` |
+| `check_yaml(doc)` | needs `pyyaml` |
 | `read_toml(text)` | stdlib `tomllib` |
-| `write_toml(doc, *, strict=False)` | needs `tomli_w`; `strict` rejects omitted null fields |
+| `write_toml(doc, *, strict=False, report=None, null_style="omit", wrap_key="value")` | needs `tomli_w` |
+| `check_toml(doc, *, null_style="omit", wrap_key="value")` | needs `tomli_w` |
 | `read_xml(text)` | `defusedxml` recommended |
-| `write_xml(doc, *, root="root", strict=False)` | `root` names the wrapper element |
+| `write_xml(doc, *, root="root", strict=False, report=None, null_style="omit", wrap_key="value")` | `root` names the wrapper element |
+| `check_xml(doc, *, root="root", null_style="omit", wrap_key="value")` | — |
 
-See [Formats](formats/overview.md) for what each can represent.
+All writers are **lenient by default**: an unrepresentable value is adjusted and
+recorded. `report=` collects the adjustments, `strict=True` raises a `WriteError`
+(with `.report`) on any of them, and `check_*` returns the report without
+writing. See [Formats](formats/overview.md) for what each can represent and the
+full list of adjustment codes.
+
+**`WriteReport`** — `.adjustments` (list of `Adjustment`), `.warnings`,
+`.errors`; `bool(report)` is `True` when there are no errors.
+**`Adjustment`** — a `NamedTuple(path, code, message, severity)`.
 
 ## Schemas
 

@@ -5,9 +5,9 @@ import json
 import pytest
 
 from dataspec import (
-    read_json, write_json, read_yaml, write_yaml,
-    read_toml, write_toml, read_xml, write_xml,
-    WriteError, ParseError,
+    read_json, write_json, check_json, read_yaml, write_yaml, check_yaml,
+    read_toml, write_toml, check_toml, read_xml, write_xml, check_xml,
+    WriteError, ParseError, WriteReport,
 )
 
 yaml = pytest.importorskip("yaml")
@@ -80,13 +80,22 @@ class TestToml:
         with pytest.raises(WriteError):
             write_toml({"a": 1, "b": None}, strict=True)
 
-    def test_rejects_null_in_array(self):
-        with pytest.raises(WriteError):
-            write_toml({"xs": [1, None, 2]})
+    def test_drops_null_in_array_lenient(self):
+        # lenient default: the null item is dropped, the rest survive
+        assert tomllib.loads(write_toml({"xs": [1, None, 2]})) == {"xs": [1, 2]}
 
-    def test_rejects_top_level_non_object(self):
+    def test_strict_rejects_null_in_array(self):
         with pytest.raises(WriteError):
-            write_toml([1, 2, 3])
+            write_toml({"xs": [1, None, 2]}, strict=True)
+
+    def test_wraps_top_level_non_object_lenient(self):
+        # lenient default: a top-level array is wrapped under `wrap_key`
+        assert tomllib.loads(write_toml([1, 2, 3])) == {"value": [1, 2, 3]}
+        assert tomllib.loads(write_toml([1, 2], wrap_key="items")) == {"items": [1, 2]}
+
+    def test_strict_rejects_top_level_non_object(self):
+        with pytest.raises(WriteError):
+            write_toml([1, 2, 3], strict=True)
 
 
 # ---------------------------------------------------------------- XML
@@ -114,13 +123,19 @@ class TestXml:
     def test_omits_null_field(self):
         assert "<b>" not in write_xml({"a": 1, "b": None}, root="r")
 
-    def test_rejects_null_in_array(self):
-        with pytest.raises(WriteError):
-            write_xml({"xs": [1, None]}, root="r")
+    def test_drops_null_in_array_lenient(self):
+        assert read_xml(write_xml({"xs": [1, None, 2]}, root="r")) == {"xs": [1, 2]}
 
-    def test_rejects_top_level_array(self):
+    def test_strict_rejects_null_in_array(self):
         with pytest.raises(WriteError):
-            write_xml([1, 2, 3])
+            write_xml({"xs": [1, None]}, root="r", strict=True)
+
+    def test_wraps_top_level_array_lenient(self):
+        assert read_xml(write_xml([1, 2, 3], wrap_key="items")) == {"items": [1, 2, 3]}
+
+    def test_strict_rejects_top_level_array(self):
+        with pytest.raises(WriteError):
+            write_xml([1, 2, 3], strict=True)
 
 
 # ---------------------------------------------------- cross-format transcode
@@ -139,6 +154,63 @@ class TestTranscode:
         assert back == json.loads(original)
 
     def test_json_with_null_to_toml_omits(self):
-        # null Option C across formats: a null field drops out of TOML
+        # a null field drops out of TOML (lenient default)
         out = write_toml(read_json('{"a": 1, "b": null}'))
         assert tomllib.loads(out) == {"a": 1}
+
+
+# ---------------------------------------------------- adjustment reports
+class TestReports:
+    def test_clean_write_has_empty_report(self):
+        rep = WriteReport()
+        write_toml({"a": 1}, report=rep)
+        assert rep.adjustments == []
+        assert bool(rep) is True
+
+    def test_check_does_not_produce_output(self):
+        rep = check_toml({"a": 1, "b": None})
+        assert isinstance(rep, WriteReport)
+        codes = [a.code for a in rep]
+        assert codes == ["null.field.omitted"]
+        assert rep.warnings and not rep.errors
+        assert bool(rep) is True            # warnings only -> still "safe"
+
+    def test_null_array_item_is_an_error(self):
+        rep = check_toml({"xs": [1, None, 2]})
+        assert [a.code for a in rep.errors] == ["null.item.dropped"]
+        assert rep.errors[0].path == "$.xs[1]"
+        assert bool(rep) is False           # has an error -> not safe
+
+    def test_null_style_drop_demotes_to_warning(self):
+        rep = check_toml({"xs": [1, None]}, null_style="drop")
+        assert rep.errors == []
+        assert [a.code for a in rep.warnings] == ["null.item.dropped"]
+
+    def test_report_arg_and_strict_share_events(self):
+        rep = WriteReport()
+        with pytest.raises(WriteError) as ei:
+            write_toml({"xs": [1, None]}, strict=True, report=rep)
+        # the collector is filled even on the strict path...
+        assert [a.code for a in rep] == ["null.item.dropped"]
+        # ...and the exception carries the same report
+        assert ei.value.report.errors
+
+    def test_json_temporal_and_special_float(self):
+        rep = check_json({"when": datetime.date(2024, 1, 1), "x": float("nan")})
+        codes = {a.code for a in rep}
+        assert codes == {"temporal.stringified", "float.special"}
+        assert any(a.severity == "error" for a in rep)     # nan is an error
+
+    def test_yaml_time_downgrades(self):
+        rep = check_yaml({"t": datetime.time(9, 30)})
+        assert [a.code for a in rep] == ["temporal.stringified"]
+
+    def test_xml_sanitizes_bad_key(self):
+        rep = WriteReport()
+        out = write_xml({"a b": 1}, root="r", report=rep)
+        assert [a.code for a in rep] == ["key.sanitized"]
+        assert "<a_b>" in out
+
+    def test_xml_nested_array_is_error(self):
+        rep = check_xml({"grid": [[1, 2], [3, 4]]}, root="r")
+        assert any(a.code == "array.nested.ambiguous" for a in rep.errors)

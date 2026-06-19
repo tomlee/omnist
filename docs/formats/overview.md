@@ -14,33 +14,85 @@ write_toml(read_json('{"name": "Ann"}'))     # 'name = "Ann"\n'
 Because they share one model, converting is just *read one, write another*. The
 only thing you have to know is what each format can and can't represent.
 
-## The guarantee: lossless, or a clear error
+## Conversion is lenient by default
 
-dataspec never silently changes your data to make it fit. If a Document contains
-something the target format can't express, the writer raises a `WriteError`
-explaining what and where:
+When a target format can't hold a value (TOML/XML have no `null`; JSON has no
+dates), dataspec **adjusts** the data to make it fit and writes successfully — it
+doesn't make you handle an error for the common case:
 
 ```python
-from dataspec import write_toml, WriteError
-write_toml({"x": None})         # ok: a null *field* is dropped (see below)
-write_toml([1, 2, 3])           # WriteError: TOML needs a top-level object
+from dataspec import write_toml
+write_toml({"x": None})         # 'x' is dropped (TOML has no null)
+write_toml([1, 2, 3])           # wrapped: 'value = [1, 2, 3]'
 ```
 
-The practical consequence: if `write_B(read_A(x))` succeeds, the result holds
-the same data, and reading it back gives you the same Document again. If it
-can't, you get an error instead of a corrupted file.
+Every adjustment is **recorded** so nothing is lost silently. You choose how much
+you want to know:
+
+```python
+from dataspec import write_toml, check_toml, WriteReport, WriteError
+
+# 1. just convert — adjustments are made silently
+write_toml(doc)
+
+# 2. convert and inspect what changed
+rep = WriteReport()
+write_toml(doc, report=rep)
+for adj in rep:
+    print(adj.severity, adj.path, adj.message)
+
+# 3. inspect *without* writing anything
+rep = check_toml(doc)
+if not rep:                       # has error-level adjustments
+    print("would lose data:", rep)
+
+# 4. refuse anything lossy — guarantees a perfect round-trip
+write_toml(doc, strict=True)      # raises WriteError if not lossless
+```
+
+Each adjustment has a **severity**: `"warning"` for conventional, recoverable
+changes (a `null` field omitted, a date written as a string) and `"error"` for
+changes likely to surprise or corrupt meaning (a `null` array item dropped, which
+shifts positions). `bool(report)` is `True` when there are no error-level
+adjustments. `strict=True` ignores severity and raises on *anything* that can't
+round-trip — and the resulting `WriteError` carries the full report on
+`.report`. See [Adjustment reports](#adjustment-reports) below.
 
 ## How `null` is handled
 
-JSON and YAML have `null`. TOML and XML don't. dataspec uses one consistent rule
-when writing to a format without `null`:
+JSON and YAML have `null`. TOML and XML don't. When writing to a format without
+`null`, dataspec:
 
-- a `null` **object field** is **omitted** from the output;
-- a `null` **array item** or a `null` at the **top level** is a `WriteError`
-  (dropping it would change the data).
+- **omits** a `null` **object field** (a `warning` — absence reads back close to
+  null);
+- **drops** a `null` **array item** (an `error` — it shifts later positions);
+- writes a top-level `null` as an **empty document** (an `error`).
 
-Pass `strict=True` to `write_toml` / `write_xml` to turn the omitted-field case
-into an error too, when you'd rather be told than have fields silently dropped.
+`null_style="drop"` (the default is `"omit"`) demotes the dropped-array-item case
+from `error` to `warning`, for when you've decided dropping is fine. Either way,
+`strict=True` turns any of these into a `WriteError`.
+
+## Adjustment reports
+
+`check_json` / `check_yaml` / `check_toml` / `check_xml` simulate a write and
+return a `WriteReport` without producing output — a pre-flight check. The same
+report is available from any writer via `report=`. A report is a list of
+`Adjustment(path, code, message, severity)` with `.warnings`, `.errors`, and a
+truthiness of "no errors". The stable `code` values:
+
+| code | severity | meaning |
+|---|---|---|
+| `null.field.omitted` | warning | `null` object field dropped (TOML/XML) |
+| `null.item.dropped` | error\* | `null` array item dropped (TOML/XML) |
+| `null.toplevel.empty` | error | top-level `null` became an empty doc (TOML/XML) |
+| `toplevel.wrapped` | warning | top-level array/scalar wrapped under `wrap_key` (TOML/XML) |
+| `temporal.stringified` | warning | date/time written as a string (JSON/XML/YAML-time) |
+| `float.special` | error | `NaN`/`Infinity` written to JSON |
+| `key.coerced` | warning | non-string object key coerced to a string (JSON) |
+| `key.sanitized` | warning | object key rewritten to a legal XML element name |
+| `array.nested.ambiguous` | error | nested array wrapped in `<item>` elements (XML) |
+
+\* `warning` under `null_style="drop"`.
 
 ## Comparison table
 
@@ -57,18 +109,22 @@ Legend: ✅ full support · ⚠️ works with a caveat · ❌ not supported.
 | Boolean | ✅ | ✅ | ✅ | ⚠️ |
 | `null` | ✅ | ✅ | ❌ | ❌ |
 | Date / time / datetime | ⚠️ | ⚠️ | ✅ | ⚠️ |
-| Top-level array | ✅ | ✅ | ❌ | ❌ |
-| Top-level scalar | ✅ | ✅ | ❌ | ⚠️ |
-| Nested arrays (array of arrays) | ✅ | ✅ | ✅ | ❌ |
+| Top-level array | ✅ | ✅ | ⚠️ | ⚠️ |
+| Top-level scalar | ✅ | ✅ | ⚠️ | ⚠️ |
+| Nested arrays (array of arrays) | ✅ | ✅ | ✅ | ⚠️ |
 | Comments in the format | ❌ | ✅ | ✅ | ✅ |
 | Exact scalar type after round-trip | ✅ | ✅ | ✅ | ⚠️ |
 
 Notes on the caveats:
 
-- **XML arrays** are repeated elements and must be a named field; XML has no way
-  to write a bare or nested array. **XML scalars** are untyped text, so types are
-  recovered on read with best-effort guessing (`"30"` → `30`, `"true"` → `True`),
-  which means a numeric-looking string can come back as a number.
+- **Top-level arrays/scalars** aren't native to TOML/XML, so they're wrapped
+  under a key (`wrap_key`, default `"value"`) and the wrap is reported. **Nested
+  arrays in XML** have no element name, so each level is wrapped in synthetic
+  `<item>` elements (reported as an `error`, since it isn't cleanly reversible).
+- **XML arrays** are repeated elements and must be a named field. **XML scalars**
+  are untyped text, so types are recovered on read with best-effort guessing
+  (`"30"` → `30`, `"true"` → `True`), which means a numeric-looking string can
+  come back as a number.
 - **Dates** have no representation in JSON or XML, so they travel as ISO-8601
   strings; schemas accept those. TOML has native date types. YAML reads/writes
   dates and datetimes natively but not standalone times.

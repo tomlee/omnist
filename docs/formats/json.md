@@ -27,9 +27,15 @@ write_json({"name": "Ann", "n": 1}, indent=2)
 ## Limitations
 
 - **No date types.** JSON has no notion of a date. On write, `date`, `time`, and
-  `datetime` values are converted to ISO-8601 strings. On read they come back as
-  strings — schemas with `date` / `time` / `datetime` accept those strings, so
-  validation still works.
+  `datetime` values are converted to ISO-8601 strings (reported as a
+  `temporal.stringified` warning). On read they come back as strings — schemas
+  with `date` / `time` / `datetime` accept those strings, so validation still
+  works.
+- **`NaN` / `Infinity`.** These aren't valid JSON; they're written as-is and
+  reported as a `float.special` **error** (use `check_json`/`strict=True` to
+  catch them).
+- **Non-string keys** are coerced to strings (a `key.coerced` warning), matching
+  the standard library.
 - **Comments aren't allowed** by JSON at all.
 
 ## Round-trip behaviour

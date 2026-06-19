@@ -110,17 +110,22 @@ write_yaml(doc)      # 'name: Ann\ntags:\n- x\n- y\n'
 write_toml(doc)      # 'name = "Ann"\ntags = ["x", "y"]\n'
 ```
 
-Not every value fits every format. TOML and XML have no `null`, for instance.
-When a value can't be represented, the writer raises a `WriteError` rather than
-emit something wrong:
+Not every value fits every format — TOML and XML have no `null`, for instance.
+By default conversion is **lenient**: the writer adjusts the data to fit and
+records what it changed, so you don't have to handle an error for the common
+case. Ask for the report, or pass `strict=True` to be told instead:
 
 ```python
-from dataspec import write_toml, WriteError
+from dataspec import write_toml, check_toml, WriteError
+
+write_toml({"items": [1, None, 2]})        # 'items = [1, 2]\n'  (null dropped)
+
+check_toml({"items": [1, None, 2]})        # a WriteReport listing the dropped null
 
 try:
-    write_toml({"items": [1, None, 2]})
+    write_toml({"items": [1, None, 2]}, strict=True)
 except WriteError as e:
-    print(e)         # null at $.items[1] cannot be represented (TOML/XML have no null)
+    print(e)         # error: $.items[1]: null array item dropped (shifts positions)
 ```
 
 The exact rules for each format — and what round-trips cleanly — are in

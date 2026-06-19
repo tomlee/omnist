@@ -13,22 +13,23 @@ doc = read_toml(Path("config.toml").read_text())
 This keeps the API unambiguous and lets you read from anywhere — a file, a
 request body, a database column.
 
-### Why did converting to TOML or XML raise a `WriteError`?
+### How do I find out if converting to TOML or XML lost anything?
 
-Those formats can't represent everything JSON and YAML can. The usual causes:
-
-- a `null` array item or top-level `null` (TOML/XML have no null);
-- a top-level array or scalar (TOML/XML need a top-level object);
-- a nested/bare array in XML (a list needs an element name).
-
-This is the "lossless, or a clear error" guarantee at work — see
-[Formats](formats/overview.md).
+Conversion is lenient by default — it adjusts and succeeds — so nothing raises
+unless you ask. To see what changed, pass `report=` to the writer or call
+`check_toml(doc)` / `check_xml(doc)`, which returns a `WriteReport` without
+writing. Typical adjustments: a `null` dropped, a top-level array wrapped, a date
+written as a string, an XML key sanitized. To make any adjustment an error
+instead, pass `strict=True` and catch the `WriteError` (its `.report` holds the
+details). See [Formats](formats/overview.md).
 
 ### What happens to `null` when I write TOML or XML?
 
-A `null` **object field** is dropped from the output. A `null` **array item** or
-a **top-level** `null` is a `WriteError`, because silently dropping it would
-change the data. Pass `strict=True` to also reject dropped fields.
+A `null` **object field** is **omitted** (a `warning`). A `null` **array item**
+is **dropped** (an `error`, because it shifts later positions). A **top-level**
+`null` becomes an empty document (an `error`). Nothing raises by default — use
+`check_*`/`report=` to see these, `null_style="drop"` to treat a dropped array
+item as an ordinary warning, or `strict=True` to refuse them.
 
 ### Why does my numeric string come back as a number from XML?
 

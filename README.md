@@ -6,7 +6,7 @@
 
 **One data model for JSON, YAML, TOML, and XML.** Read any of them into plain
 Python data, validate it against a schema, and write it back out to any of the
-others — or get a clear error when a value can't be represented.
+others — and get a report of anything that had to change to fit.
 
 ```python
 from dataspec import read_json, write_toml, parse_schema
@@ -47,9 +47,22 @@ dataspec gives you **one** model and **one** set of operations:
 - **Infer** a schema from real examples, then refine it.
 - **Compare** two schemas to check whether a change is backward-compatible.
 
-The conversion guarantee is simple: **lossless, or a clear error.** When a
-document can't be represented in a target format (for example, `null` in TOML),
-you get a `WriteError` instead of silently corrupted output.
+Conversion is **lenient by default**: when a target format can't hold a value
+(for example, `null` in TOML), dataspec adjusts the data to fit and *records*
+what it changed — it doesn't make you handle an error for the common case. Ask
+for the report when you care, or opt into a strict, lossless mode:
+
+```python
+from dataspec import write_toml, check_toml
+
+write_toml({"a": 1, "b": None})        # 'a = 1\n'  — null field dropped
+check_toml({"xs": [1, None, 2]})       # a report flagging the dropped null
+write_toml(doc, strict=True)           # raise WriteError if anything is lossy
+```
+
+`check_*` simulates a write and returns the report without producing output;
+`strict=True` guarantees a lossless round-trip. See
+[Formats](docs/formats/overview.md) for the full model.
 
 ## Installation
 
