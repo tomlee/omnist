@@ -16,7 +16,7 @@ print(schema.to_dsl())
 ```
 
 `infer(samples)` takes any iterable of Documents and returns a `Schema`. It
-needs at least one sample.
+needs at least one sample — `infer([])` raises `SchemaError`.
 
 ## What it does
 
@@ -30,13 +30,14 @@ sample it was built from. From there it generalizes cautiously.
 - **Nullability** is added when any sample had `null` in that position.
 - **Arrays** generalize their items and accept **any length**. Inference never
   locks in the exact lengths it happened to observe — seeing `[1, 2]` doesn't
-  mean "always two." If only empty arrays were seen, the array is inferred as
-  empty-only (no element type was observed).
+  mean "always two." If only empty arrays were seen, no element type was
+  observed, so the array is inferred as empty-only.
 
 ```python
 infer([{"v": 1}, {"v": "x"}]).to_dsl()      # root { v: integer | string }
 infer([{"v": 1}, {"v": 2.5}]).to_dsl()      # root { v: number }
 infer([{"v": "a"}, {"v": None}]).to_dsl()   # root { v: string? }
+infer([{"v": []}]).to_dsl()                 # root { v: [null?]{0} }  -- "{0}" means empty-only
 ```
 
 ## Options
