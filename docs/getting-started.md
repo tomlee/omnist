@@ -107,7 +107,8 @@ bad.ok               # False
 for err in bad.errors:
     print(err.path, "-", err.message)
 # $.name - expected string, got integer
-# $.age  - expected integer, got string
+# $.age - expected integer, got string
+# $ - missing required field 'tags'
 ```
 
 `print(result)` gives a readable summary, and `schema.accepts(d)` is a shortcut
@@ -120,7 +121,7 @@ Import one format, emit another — the `Doc.to_*` methods return a string:
 ```python
 d = Doc.from_json('{"name": "Ann", "tags": ["x", "y"]}')
 d.to_yaml()      # 'name: Ann\ntags:\n- x\n- y\n'
-d.to_toml()      # 'name = "Ann"\ntags = ["x", "y"]\n'
+d.to_toml()      # 'name = "Ann"\ntags = [\n    "x",\n    "y",\n]\n'
 ```
 
 Not every value fits every format — TOML and XML have no `null`, for instance.
@@ -131,7 +132,7 @@ case. Ask for the report, or pass `strict=True` to be told instead:
 ```python
 from dataspec import doc, WriteError
 
-doc({"items": [1, None, 2]}).to_toml()        # 'items = [1, 2]\n'  (null dropped)
+doc({"items": [1, None, 2]}).to_toml()        # 'items = [\n    1,\n    2,\n]\n'  (null dropped)
 
 try:
     doc({"items": [1, None, 2]}).to_toml(strict=True)
