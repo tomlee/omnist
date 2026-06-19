@@ -451,7 +451,7 @@ def _name(v: Any) -> str:
 # Registry — register the four built-in formats as plugins
 # ===========================================================================
 
-from ._registry import (  # noqa: E402  (kept at the bottom to avoid import cycles)
+from .registry import (  # noqa: E402  (kept at the bottom to avoid import cycles)
     Format, register_format, get_format, formats,
 )
 

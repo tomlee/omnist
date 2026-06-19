@@ -7,9 +7,7 @@ try:
 except Exception:
     pass
 
-from dataspec import (
-    Doc, doc, obj, arr, string, integer, boolean, optional, schema, infer,
-)
+from dataspec import Doc, doc, obj, arr, optional, schema, infer, t
 
 
 def main():
@@ -30,11 +28,11 @@ def main():
 
     print("\n== 4. Validate against a Schema (built in Python) ==")
     s = schema(obj(
-        name    = string,
-        age     = integer,
-        tags    = arr(string),
-        address = obj(city=string),
-        active  = optional(boolean),
+        name    = t.string,
+        age     = t.integer,
+        tags    = arr(t.string),
+        address = obj(city=t.string),
+        active  = optional(t.boolean),
     ))
     print("validate:", s.validate(d))
 

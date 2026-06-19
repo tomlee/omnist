@@ -60,7 +60,7 @@ against the Document model and copied in, so it can never become malformed.
 | `Schema` | a root `Type` plus named types; `validate` / `compatible_with` / `normalize` / `to_dsl` |
 | `Type` → `ObjectType`, `ArrayType`, `ScalarType`, `AnyType`, `RefType` | the type tree |
 | `Field` | a named entry in an `ObjectType` (a type + required flag) |
-| `obj`, `arr`, `mapping`, `enum`, `optional`, `nullable`, `ref`, `schema` | the Python builder |
+| `obj`, `arr`, `mapping`, `enum`, `optional`, `nullable`, `ref`, `schema`, `t` | the Python builder (`t` holds the scalar type atoms) |
 | `parse_schema` / `to_dsl` | DSL text ⇄ `Schema` |
 | `infer` | sample Documents → `Schema` |
 
@@ -91,7 +91,7 @@ registry, so a newly registered format is immediately usable. See
 | `dataspec.dsl` | `parse_schema`, `to_dsl` |
 | `dataspec.infer` | `infer` |
 | `dataspec.formats` | the codecs + built-in `Format` registration |
-| `dataspec._registry` | the `Format` plugin registry |
+| `dataspec.registry` | the `Format` plugin registry |
 | `dataspec.report` | `WriteReport`, `Adjustment` (conversion adjustments) |
 | `dataspec.errors` | the exception hierarchy |
 

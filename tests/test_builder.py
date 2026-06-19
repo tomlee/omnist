@@ -2,40 +2,39 @@
 import pytest
 
 from dataspec import (
-    schema, obj, arr, mapping, ref, enum, optional, nullable,
-    string, integer, number, boolean, any as any_t,
-    parse_schema, doc, SchemaError,
+    schema, obj, arr, mapping, ref, enum, optional, nullable, t,
+    parse_schema, doc, SchemaError, ScalarType, INTEGER, STRING,
 )
 
 
 class TestBuilderEquivalence:
     def test_simple_object(self):
-        built = schema(obj(name=string, age=integer))
+        built = schema(obj(name=t.string, age=t.integer))
         dsl = parse_schema("root { name: string, age: integer }")
         assert built.equivalent(dsl)
 
     def test_optional_field(self):
-        built = schema(obj(name=string, age=optional(integer)))
+        built = schema(obj(name=t.string, age=optional(t.integer)))
         dsl = parse_schema("root { name: string, age?: integer }")
         assert built.equivalent(dsl)
 
     def test_array(self):
-        built = schema(obj(xs=arr(string)))
+        built = schema(obj(xs=arr(t.string)))
         dsl = parse_schema("root { xs: [string] }")
         assert built.equivalent(dsl)
 
     def test_array_bounds(self):
-        built = schema(arr(integer, min=2, max=3))
+        built = schema(arr(t.integer, min=2, max=3))
         dsl = parse_schema("root [integer]{2,3}")
         assert built.equivalent(dsl)
 
     def test_nullable(self):
-        built = schema(obj(v=nullable(boolean)))
+        built = schema(obj(v=nullable(t.boolean)))
         dsl = parse_schema("root { v: boolean? }")
         assert built.equivalent(dsl)
 
     def test_map(self):
-        built = schema(mapping(integer))
+        built = schema(mapping(t.integer))
         dsl = parse_schema("root { [string]: integer }")
         assert built.equivalent(dsl)
 
@@ -45,30 +44,25 @@ class TestBuilderEquivalence:
         assert built.equivalent(dsl)
 
     def test_scalar_union(self):
-        built = schema(obj(v=ScalarUnion()))
+        built = schema(obj(v=ScalarType({INTEGER, STRING})))
         dsl = parse_schema("root { v: integer | string }")
         assert built.equivalent(dsl)
 
     def test_any(self):
-        built = schema(obj(meta=any_t))
+        built = schema(obj(meta=t.any))
         dsl = parse_schema("root { meta: any }")
         assert built.equivalent(dsl)
 
     def test_named_ref_and_recursion(self):
-        node = obj(value=integer, kids=arr(ref("Node")))
+        node = obj(value=t.integer, kids=arr(ref("Node")))
         built = schema(ref("Node"), Node=node)
         dsl = parse_schema("type Node = { value: integer, kids: [Node] }\nroot Node")
         assert built.equivalent(dsl)
 
 
-def ScalarUnion():
-    from dataspec import ScalarType, INTEGER, STRING
-    return ScalarType({INTEGER, STRING})
-
-
 class TestBuilderValidation:
     def test_validates_a_doc(self):
-        s = schema(obj(name=string, tags=arr(string)))
+        s = schema(obj(name=t.string, tags=arr(t.string)))
         assert s.validate(doc({"name": "Ann", "tags": ["x"]})).ok
         assert not s.validate(doc({"name": 1, "tags": ["x"]})).ok
 
@@ -92,7 +86,7 @@ class TestBuilderErrors:
 
     def test_nullable_rejects_optional(self):
         with pytest.raises(SchemaError):
-            nullable(optional(string))
+            nullable(optional(t.string))
 
     def test_schema_checks_refs(self):
         with pytest.raises(SchemaError):
@@ -101,18 +95,18 @@ class TestBuilderErrors:
 
 class TestSchemaGetters:
     def test_field_and_children(self):
-        s = schema(obj(name=string, age=optional(integer)))
-        assert s.root.field("name") is string
+        s = schema(obj(name=t.string, age=optional(t.integer)))
+        assert s.root.field("name") is t.string
         assert set(n for n, _ in s.root.children()) == {"name", "age"}
 
     def test_field_missing_raises(self):
         with pytest.raises(SchemaError):
-            obj(name=string).field("nope")
+            obj(name=t.string).field("nope")
 
     def test_array_children(self):
-        a = arr(string)
-        assert a.children() == [("[]", string)]
+        a = arr(t.string)
+        assert a.children() == [("[]", t.string)]
 
     def test_map_children_include_rest(self):
-        m = mapping(integer)
-        assert ("[rest]", integer) in m.children()
+        m = mapping(t.integer)
+        assert ("[rest]", t.integer) in m.children()

@@ -7,21 +7,20 @@ import sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from dataspec import (
-    schema, obj, arr, mapping, enum, optional, nullable,
-    string, integer, boolean, doc, parse_schema,
+    schema, obj, arr, mapping, enum, optional, nullable, t, doc, parse_schema,
 )
 
 
 def main():
     # The builder produces the same object tree parse_schema would.
     s = schema(obj(
-        id      = integer,
-        name    = string,
+        id      = t.integer,
+        name    = t.string,
         status  = enum("open", "shipped", "cancelled"),
-        tags    = arr(string),
-        note    = optional(string),
-        deleted = nullable(boolean),
-        scores  = mapping(integer),            # { [string]: integer }
+        tags    = arr(t.string),
+        note    = optional(t.string),
+        deleted = nullable(t.boolean),
+        scores  = mapping(t.integer),          # { [string]: integer }
     ))
 
     print("== built schema, printed as DSL ==")

@@ -18,6 +18,7 @@ plain Python and are still available; ``Doc`` is the object layer over them.
 
 from .errors import (
     DataspecError, SchemaError, ParseError, WriteError, DocumentError,
+    DetachedNode,
 )
 from .report import WriteReport, Adjustment
 from .schema import (
@@ -27,8 +28,7 @@ from .schema import (
 )
 from .document import Doc, doc
 from .builder import (
-    obj, arr, mapping, ref, enum, optional, nullable, schema,
-    string, integer, number, boolean, date, time, datetime, any,
+    obj, arr, mapping, ref, enum, optional, nullable, schema, t,
 )
 from .dsl import parse_schema, to_dsl
 from .infer import infer
@@ -43,6 +43,7 @@ from .formats import (
 __all__ = [
     # errors
     "DataspecError", "SchemaError", "ParseError", "WriteError", "DocumentError",
+    "DetachedNode",
     # serialization reports
     "WriteReport", "Adjustment",
     # document (data DOM)
@@ -52,8 +53,7 @@ __all__ = [
     "Type", "AnyType", "ScalarType", "ArrayType", "ObjectType", "Field", "RefType",
     "STRING", "INTEGER", "NUMBER", "BOOLEAN", "DATE", "TIME", "DATETIME",
     # schema builder
-    "obj", "arr", "mapping", "ref", "enum", "optional", "nullable", "schema",
-    "string", "integer", "number", "boolean", "date", "time", "datetime", "any",
+    "obj", "arr", "mapping", "ref", "enum", "optional", "nullable", "schema", "t",
     # dsl
     "parse_schema", "to_dsl",
     # operations

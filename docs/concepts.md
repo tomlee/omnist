@@ -33,10 +33,10 @@ that mirror the data — `ObjectType`, `ArrayType`, `ScalarType`, `AnyType`,
 `RefType`. You can write a schema three ways, all producing the same object tree:
 
 ```python
-from dataspec import parse_schema, obj, string, arr, schema, infer
+from dataspec import parse_schema, obj, arr, schema, infer, t, doc
 
 parse_schema("root { name: string, tags: [string] }")   # 1. the DSL (text)
-schema(obj(name=string, tags=arr(string)))               # 2. the Python builder
+schema(obj(name=t.string, tags=arr(t.string)))           # 2. the Python builder
 infer([doc({"name": "Ann", "tags": ["x"]})])             # 3. inferred from samples
 ```
 

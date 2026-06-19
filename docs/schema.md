@@ -280,33 +280,34 @@ object tree from Python expressions — handy when a schema is generated or
 composed, where string concatenation would be awkward, and friendlier to IDEs and
 type checkers.
 
+The scalar **type atoms** live under the `t` namespace — `t.string`, `t.date`,
+`t.any`, etc. — so they never shadow Python's `any` or the stdlib `datetime` /
+`date` / `time` modules. The builder *functions* (`obj`, `arr`, …) are top-level.
+
 ```python
-from dataspec import (
-    schema, obj, arr, mapping, enum, optional, nullable, ref,
-    string, integer, number, boolean, date, time, datetime, any,
-)
+from dataspec import schema, obj, arr, mapping, enum, optional, nullable, ref, t
 
 s = schema(obj(
-    name    = string,
-    age     = optional(integer),               # an optional field
+    name    = t.string,
+    age     = optional(t.integer),             # an optional field
     status  = enum("open", "shipped"),         # a fixed set of values
-    tags    = arr(string),                      # an array
-    deleted = nullable(boolean),                # also accepts null
-    scores  = mapping(integer),                 # a map { [string]: integer }
+    tags    = arr(t.string),                    # an array
+    deleted = nullable(t.boolean),              # also accepts null
+    scores  = mapping(t.integer),               # a map { [string]: integer }
 ))
 ```
 
-The vocabulary:
+The vocabulary (where `T` stands for any type):
 
 | Builder | Produces | DSL equivalent |
 |---|---|---|
-| `string`, `integer`, `number`, `boolean`, `date`, `time`, `datetime` | a scalar type | the same keywords |
-| `any` | matches anything | `any` |
+| `t.string`, `t.integer`, `t.number`, `t.boolean`, `t.date`, `t.time`, `t.datetime` | a scalar type | the same keywords |
+| `t.any` | matches anything | `any` |
 | `obj(**fields)` | a closed object | `{ ... }` |
-| `optional(t)` | marks a field not-required | `name?: t` |
-| `nullable(t)` | a type that also accepts null | `t?` |
+| `optional(T)` | marks a field not-required | `name?: T` |
+| `nullable(T)` | a type that also accepts null | `T?` |
 | `arr(item, min=, max=)` | an array (optionally bounded) | `[item]{min,max}` |
-| `mapping(t)` | a map of string keys to `t` | `{ [string]: t }` |
+| `mapping(T)` | a map of string keys to `T` | `{ [string]: T }` |
 | `enum(*values)` | a fixed set of literals | `"a" \| "b"` |
 | `ref(name)` | a named-type reference | `Name` |
 | `schema(root, **named)` | assembles a `Schema` | `root … type Name = …` |
@@ -318,7 +319,7 @@ Named types and recursion work by passing named types to `schema(...)` and
 referring to them with `ref`:
 
 ```python
-node = obj(value=integer, kids=arr(ref("Node")))
+node = obj(value=t.integer, kids=arr(ref("Node")))
 s = schema(ref("Node"), Node=node)             # type Node = { value, kids: [Node] }
 ```
 

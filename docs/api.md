@@ -109,21 +109,24 @@ The ergonomic way to build a schema in Python (see
 
 | Name | Builds |
 |---|---|
-| `string`, `integer`, `number`, `boolean`, `date`, `time`, `datetime` | scalar singletons |
-| `any` | `AnyType()` |
+| `t.string`, `t.integer`, `t.number`, `t.boolean`, `t.date`, `t.time`, `t.datetime` | scalar type atoms (namespaced under `t`) |
+| `t.any` | `AnyType()` |
 | `obj(**fields)` | a closed object; values are a type or `optional(type)` |
-| `optional(t)` | marks a field not-required (inside `obj`) |
-| `nullable(t)` | a copy of `t` that also accepts null |
+| `optional(T)` | marks a field not-required (inside `obj`) |
+| `nullable(T)` | a copy of `T` that also accepts null |
 | `arr(item, min=0, max=None)` | an array type |
 | `mapping(value_type)` | a map `{[string]: T}` |
 | `enum(*values)` | a scalar restricted to literal values |
 | `ref(name)` | a named-type reference |
 | `schema(root, **named_types) -> Schema` | assemble (and check refs) |
 
-```python
-from dataspec import schema, obj, arr, string, integer, optional, doc
+The type atoms are namespaced under `t` so they don't shadow Python's `any` or
+the stdlib `datetime` / `date` / `time`.
 
-s = schema(obj(name=string, age=optional(integer), tags=arr(string)))
+```python
+from dataspec import schema, obj, arr, optional, doc, t
+
+s = schema(obj(name=t.string, age=optional(t.integer), tags=arr(t.string)))
 s.validate(doc({"name": "Ann", "tags": ["x"]})).ok        # True
 ```
 
@@ -184,3 +187,4 @@ All inherit from `DataspecError`, so you can catch everything with one `except`.
 | `ParseError` | a document can't be read (outside a format's supported profile) |
 | `WriteError` | a document can't be represented in a target format (`strict=True`); carries `.report` |
 | `DocumentError` | a value isn't a legal Document, or a `Doc` operation is invalid |
+| `DetachedNode` | a `Doc` cursor was used after its node was removed (subclass of `DocumentError`) |

@@ -3,7 +3,7 @@ import datetime
 
 import pytest
 
-from dataspec import Doc, doc, DocumentError
+from dataspec import Doc, doc, DocumentError, DetachedNode
 
 
 # ---------------------------------------------------------------- import guard
@@ -201,6 +201,37 @@ class TestCursors:
         d = doc({"a": {"x": 1}})
         child = d.child("a")
         assert child.parent is d and child.key == "a"
+
+    def test_detached_cursor_after_remove(self):
+        d = doc({"a": {"x": 1}, "b": 2})
+        a = d.child("a")
+        d.remove("a")
+        with pytest.raises(DetachedNode):
+            a.get("x")
+        with pytest.raises(DetachedNode):
+            a.set("x", 9)
+
+    def test_detached_after_parent_replaced(self):
+        d = doc({"a": {"x": 1}})
+        a = d.child("a")
+        d.remove("a")
+        d.add("a", {"x": 2})            # a different object at the same key
+        with pytest.raises(DetachedNode):
+            a.get("x")
+
+    def test_detached_via_ancestor_removal(self):
+        d = doc({"a": {"b": {"x": 1}}})
+        deep = d.child("a").child("b")
+        d.remove("a")                   # remove an ancestor
+        with pytest.raises(DetachedNode):
+            deep.get("x")
+
+    def test_array_element_cursor_detaches_on_earlier_removal(self):
+        d = doc({"xs": [{"id": 0}, {"id": 1}]})
+        second = d.child("xs").child_at(1)
+        d.child("xs").remove(0)         # shifts indices
+        with pytest.raises(DetachedNode):
+            second.get("id")
 
 
 # ---------------------------------------------------------------- serialization

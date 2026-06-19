@@ -92,9 +92,10 @@ A cursor can remove itself from its parent with `drop()`:
 d.child("address").drop()        # detach this node from its parent
 ```
 
-> **Stale cursors.** If you hold a cursor and then remove its node, the cursor
-> becomes detached — edits through it no longer affect the document. (It doesn't
-> raise; it just points at an orphaned subtree.)
+> **Stale cursors.** If you hold a cursor and then remove its node (or a node
+> above it), using the cursor raises `DetachedNode` rather than silently editing
+> an orphaned subtree. This also catches array-index invalidation — removing an
+> earlier element detaches cursors to later ones.
 
 ## Serializing
 

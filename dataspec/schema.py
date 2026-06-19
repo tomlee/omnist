@@ -282,7 +282,8 @@ class Schema:
                 "validate() expects a Doc; wrap your data first, e.g. "
                 "doc(my_dict) or Doc.from_json(text)")
         result = ValidationResult()
-        self._check(doc.to_data(), self.root, "$", result)
+        # Validation only reads the tree, so walk the live data without copying.
+        self._check(doc._data, self.root, "$", result)
         return result
 
     def accepts(self, doc: Any) -> bool:

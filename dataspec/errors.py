@@ -23,6 +23,15 @@ class DocumentError(DataspecError):
     """
 
 
+class DetachedNode(DocumentError):
+    """A cursor was used after its node was removed from the document.
+
+    Holding a :class:`~dataspec.document.Doc` cursor and then removing that node
+    (or a node above it) leaves the cursor pointing at a subtree no longer in the
+    document.  Using it raises this instead of silently editing an orphan.
+    """
+
+
 class WriteError(DataspecError):
     """A document cannot be represented losslessly in the target format.
 

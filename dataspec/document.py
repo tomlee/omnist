@@ -26,13 +26,9 @@ import copy as _copy
 import datetime as _dt
 from typing import Any, Iterator, List, Optional, Tuple
 
-from .errors import DocumentError
+from .errors import DocumentError, DetachedNode
 
 _MISSING = object()
-
-# The scalar leaf types a Document may hold.  (bool is an int subclass; datetime
-# is a date subclass — both are covered by these checks.)
-_SCALARS = (str, int, float, bool, _dt.date, _dt.time, _dt.datetime, type(None))
 
 
 # ===========================================================================
@@ -168,6 +164,7 @@ class Doc:
     @property
     def value(self) -> Any:
         """The scalar value of a scalar node.  Errors on objects/arrays."""
+        self._attached()
         if _is_container(self._data):
             raise DocumentError(f"{self.path}: not a scalar (it is a {self.kind})")
         return self._data
@@ -235,6 +232,7 @@ class Doc:
     # -- array reads ----------------------------------------------------
     def len(self) -> int:
         """Number of children (object keys or array elements)."""
+        self._attached()
         if not _is_container(self._data):
             raise DocumentError(f"{self.path}: a scalar has no length")
         return len(self._data)
@@ -281,6 +279,7 @@ class Doc:
         Refuses to overwrite a subtree or to store a container — reshaping the
         tree must go through ``remove`` + ``add``/``append``.
         """
+        self._attached()
         if isinstance(value, (dict, list, tuple)):
             raise DocumentError(
                 f"{self.path}: set() takes a scalar; use add/append to build structure")
@@ -307,6 +306,7 @@ class Doc:
 
     def remove(self, key) -> "Doc":
         """Remove the whole subtree at ``key`` (object) or ``index`` (array)."""
+        self._attached()
         if self.kind == "object":
             if key not in self._data:
                 raise DocumentError(f"{self.path}: no key {key!r}")
@@ -319,6 +319,7 @@ class Doc:
 
     def drop(self) -> None:
         """Remove this node from its parent.  Errors at the root."""
+        self._attached()
         if self._parent is None:
             raise DocumentError("cannot drop the root document")
         self._parent.remove(self._key)
@@ -326,9 +327,11 @@ class Doc:
     # -- serialization --------------------------------------------------
     def to_data(self) -> Any:
         """A detached deep copy of this node's data as plain Python."""
+        self._attached()
         return _copy.deepcopy(self._data)
 
     def to_format(self, name: str, **opts: Any) -> str:
+        self._attached()
         from .formats import get_format
         return get_format(name).write(self._data, **opts)
 
@@ -346,11 +349,13 @@ class Doc:
 
     # -- dunders --------------------------------------------------------
     def __len__(self) -> int:
+        self._attached()
         if not _is_container(self._data):
             raise DocumentError(f"{self.path}: a scalar has no length")
         return len(self._data)
 
     def __iter__(self) -> Iterator:
+        self._attached()
         if self.kind == "object":
             return iter(list(self._data.keys()))
         if self.kind == "array":
@@ -377,10 +382,26 @@ class Doc:
 
     # -- internals ------------------------------------------------------
     def _require(self, kind: str) -> None:
+        self._attached()
         if self.kind != kind:
             raise DocumentError(
                 f"{self.path}: expected a{'n' if kind[0] in 'aeiou' else ''} "
                 f"{kind}, this node is a {self.kind}")
+
+    def _attached(self) -> None:
+        """Raise DetachedNode if this cursor's node is no longer in the document."""
+        node = self
+        while node._parent is not None:
+            parent = node._parent
+            try:
+                current = parent._data[node._key]
+            except (KeyError, IndexError, TypeError):
+                raise DetachedNode(
+                    f"{self.path}: this node was removed from the document") from None
+            if current is not node._data:
+                raise DetachedNode(
+                    f"{self.path}: this node was removed from the document")
+            node = parent
 
     def _index(self, index: Any) -> int:
         if not isinstance(index, int) or isinstance(index, bool):

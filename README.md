@@ -10,7 +10,7 @@ single in-memory structure, build and edit it through a guarded API, validate it
 against a schema, and write it back out to any of the others.
 
 ```python
-from dataspec import Doc, obj, string, integer, arr, schema
+from dataspec import Doc, obj, arr, schema, t
 
 # Import one format; the same Document writes out to any other.
 d = Doc.from_json('{"name": "Ann", "age": 30, "tags": ["x", "y"]}')
@@ -24,7 +24,7 @@ d.child("tags").append("z")
 d.add("active", True)
 
 # Describe the shape you expect, then check the Document against it.
-s = schema(obj(name=string, age=integer, tags=arr(string), active=string))
+s = schema(obj(name=t.string, age=t.integer, tags=arr(t.string), active=t.string))
 print(s.validate(d))               # invalid:  at $.active: expected string, got boolean
 ```
 

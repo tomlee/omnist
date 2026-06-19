@@ -4,12 +4,12 @@ Three doors lead to the same schema object tree: :func:`~dataspec.parse_schema`
 (text), :func:`~dataspec.infer` (examples), and this builder (code).  The builder
 is handy when schemas are generated or composed, where a string DSL is awkward::
 
-    from dataspec import obj, arr, string, integer, optional, schema
+    from dataspec import obj, arr, optional, schema, t
 
     s = schema(obj(
-        name = string,
-        age  = optional(integer),
-        tags = arr(string),
+        name = t.string,
+        age  = optional(t.integer),
+        tags = arr(t.string),
     ))
     s.validate(doc({"name": "Ann", "tags": ["x"]}))
 
@@ -27,15 +27,29 @@ from .schema import (
     STRING, INTEGER, NUMBER, BOOLEAN, DATE, TIME, DATETIME,
 )
 
-# -- scalar singletons (treat as immutable; nullable() returns a fresh copy) --
-string = ScalarType({STRING})
-integer = ScalarType({INTEGER})
-number = ScalarType({NUMBER})
-boolean = ScalarType({BOOLEAN})
-date = ScalarType({DATE})
-time = ScalarType({TIME})
-datetime = ScalarType({DATETIME})
-any = AnyType()
+# -- type atoms, namespaced under `t` to avoid shadowing builtins/stdlib --
+class _Types:
+    """The schema type atoms, e.g. ``t.string``, ``t.date``, ``t.any``.
+
+    Namespaced (rather than bare top-level names) so they never shadow Python's
+    ``any`` or the stdlib ``datetime`` / ``date`` / ``time`` modules.  Treat the
+    atoms as immutable — ``nullable()`` returns a fresh copy.
+    """
+    string = ScalarType({STRING})
+    integer = ScalarType({INTEGER})
+    number = ScalarType({NUMBER})
+    boolean = ScalarType({BOOLEAN})
+    date = ScalarType({DATE})
+    time = ScalarType({TIME})
+    datetime = ScalarType({DATETIME})
+    any = AnyType()
+
+    def __repr__(self) -> str:
+        return ("dataspec.t — type atoms: string, integer, number, boolean, "
+                "date, time, datetime, any")
+
+
+t = _Types()
 
 
 class _Optional:
