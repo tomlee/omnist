@@ -3,10 +3,8 @@
 
 Run: python3 examples/convert_formats.py
 """
-import os
 import sys
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 try:
     sys.stdout.reconfigure(encoding="utf-8")
 except Exception:

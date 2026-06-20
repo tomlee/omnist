@@ -1,12 +1,5 @@
 """Executable check of the snippets shown in README/docs (run via pytest)."""
-import os
-import sys
-
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
 import tomllib
-
-import pytest
 
 import dataspec as ds
 from dataspec import INTEGER, STRING, Field, ObjectType, ScalarType, Schema
@@ -45,17 +38,4 @@ def test_getting_started_map_and_any():
         ds.doc({"name": "A", "meta": {"x": [1, 2]}}))
 
 
-EXAMPLES = [
-    "quickstart.py", "validate_api_payload.py", "convert_formats.py",
-    "infer_and_refine.py", "version_check.py",
-    "build_document.py", "build_schema.py",
-]
-
-
-@pytest.mark.parametrize("name", EXAMPLES)
-def test_example_runs(name):
-    import subprocess
-    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    r = subprocess.run([sys.executable, os.path.join(root, "examples", name)],
-                       capture_output=True, text=True, encoding="utf-8")
-    assert r.returncode == 0, r.stderr
+# Every examples/*.py is run by tests/test_examples.py; not duplicated here.
