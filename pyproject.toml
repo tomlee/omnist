@@ -32,6 +32,9 @@ dev = ["pytest", "pyyaml", "tomli_w", "defusedxml", "ruff"]
 
 [project.urls]
 Homepage = "https://github.com/tomlee/dataspec"
+Repository = "https://github.com/tomlee/dataspec"
+Issues = "https://github.com/tomlee/dataspec/issues"
+Changelog = "https://github.com/tomlee/dataspec/blob/master/CHANGELOG.md"
 
 [tool.setuptools]
 packages = ["dataspec"]

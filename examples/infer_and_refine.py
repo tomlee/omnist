@@ -3,11 +3,6 @@
 
 Run: python3 examples/infer_and_refine.py
 """
-import os
-import sys
-
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
 from dataspec import doc, infer, parse_schema
 
 
