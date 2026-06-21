@@ -7,7 +7,7 @@ Everything importable from `import dataspec`. Types: a **Document** is held by a
 
 ```python
 import dataspec
-dataspec.__version__        # "0.1.1a1"
+dataspec.__version__        # "0.1.1a2"
 ```
 
 ---
@@ -167,12 +167,77 @@ Low-level codecs over the canonical node form (a scalar, or a list of
 | | |
 |---|---|
 | `read_json(text)` / `read_yaml` / `read_toml` / `read_xml` | parse → a node |
-| `write_json(node, *, indent=None)` | a node → JSON (groups same-label edges) |
-| `write_yaml(node)` / `write_toml(node)` / `write_xml(node)` | a node → that format |
+| `write_json(node, *, strict=False, report=None, indent=None)` | a node → JSON (groups same-label edges) |
+| `write_yaml(node, *, strict=False, report=None)` | a node → YAML |
+| `write_toml(node, *, strict=False, report=None)` | a node → TOML |
+| `write_xml(node, *, strict=False, report=None)` | a node → XML |
+| `check_json(node)` / `check_yaml` / `check_toml` / `check_xml` | simulate a write; return a `WriteReport`, no output |
 
 `read_yaml`/`write_yaml` need `pyyaml`; `write_toml` needs `tomli_w`; `read_xml`
 recommends `defusedxml` (else an `UnsafeXMLWarning`). See
 [Formats](formats/overview.md) for per-format mapping and caveats.
+
+### Adjustment reports (lossy writes)
+
+Writing to a format that can't hold every value (TOML has no `null`; JSON/XML
+have no date type) is **lenient by default**: the writer adjusts the value and
+records it. `Doc.to_*` and `write_*` accept the same two options:
+
+| | |
+|---|---|
+| `strict=True` | raise `WriteError` (carrying the report) if anything was adjusted |
+| `report=a_WriteReport` | collect the adjustments into it, without raising |
+
+```python
+from dataspec import doc, WriteReport, WriteError
+
+d = doc({"a": 1, "b": None})
+d.to_toml()                          # 'a = 1\n' -- 'b' dropped, silently
+
+rep = WriteReport()
+d.to_toml(report=rep)
+[(a.code, a.severity) for a in rep]  # [('null.omitted', 'warning')]
+
+d.to_toml(strict=True)               # raises WriteError
+```
+
+### `class WriteReport`
+Every adjustment a writer made. `.warnings` / `.errors` (lists of
+`Adjustment`); `bool(report)` is `True` when there are no `"error"`-severity
+entries (warnings are fine) — `if check_toml(node): ...` reads as "safe to
+write." Iterable; `str(report)` is a readable multi-line summary.
+
+### `class Adjustment`
+A named tuple `Adjustment(path, code, message, severity)` — `severity` is
+`"warning"` or `"error"`. Stable codes: `null.omitted` (TOML/XML), `temporal.stringified`
+(JSON/YAML/XML), `float.special` (JSON `NaN`/`Infinity`), `key.sanitized` (XML).
+
+---
+
+## Format registry
+
+Formats are plugins. The four built-ins register themselves on import.
+
+| | |
+|---|---|
+| `register_format(Format(name, read, write))` | add a format, usable via `Doc.from_format` / `Doc.to_format` |
+| `get_format(name) -> Format` | look one up by name (raises `DataspecError` if unknown) |
+| `formats() -> list[str]` | every registered name, sorted |
+
+```python
+from dataspec import Format, register_format, Doc
+
+register_format(Format(
+    name="lines",
+    read=lambda text: [("n", int(x)) for x in text.split()],
+    write=lambda node, **opts: " ".join(str(v) for _, v in node),
+))
+Doc.from_format("lines", "1 2 3").to_format("lines")    # '1 2 3'
+```
+
+### `class Format`
+A named tuple `Format(name, read, write)` — `read(text) -> node`,
+`write(node, **opts) -> str`.
 
 ---
 

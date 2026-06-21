@@ -2,6 +2,9 @@
 import dataspec as ds
 from dataspec import (
     Doc,
+    Format,
+    WriteError,
+    WriteReport,
     doc,
     field,
     infer,
@@ -12,6 +15,7 @@ from dataspec import (
     read_yaml,
     record,
     ref,
+    register_format,
     schema,
     t,
     union,
@@ -23,7 +27,7 @@ def test_readme_at_a_glance():
                      'record Team { "name": string, "members" [1,]: Member }\nroot Team')
     assert s.validate(doc({"name": "X",
                            "members": [{"name": "Ann", "role": "dev"}]})).ok
-    assert ds.__version__ == "0.1.1a1"
+    assert ds.__version__ == "0.1.1a2"
 
 
 def test_guide_documents():
@@ -130,3 +134,25 @@ def test_formats_docs_snippets():
     assert write_json([("tag", "x")]) == '{"tag": "x"}'
     assert read_xml("<t><m>a</m><x>1</x><m>b</m></t>") == \
         [("t", [("m", "a"), ("x", 1), ("m", "b")])]      # interleaving preserved
+
+
+def test_api_docs_adjustment_reports():
+    d = doc({"a": 1, "b": None})
+    assert d.to_toml() == "a = 1\n"
+    rep = WriteReport()
+    d.to_toml(report=rep)
+    assert [(a.code, a.severity) for a in rep] == [("null.omitted", "warning")]
+    try:
+        d.to_toml(strict=True)
+        assert False, "expected WriteError"
+    except WriteError:
+        pass
+
+
+def test_api_docs_format_registry():
+    register_format(Format(
+        name="lines",
+        read=lambda text: [("n", int(x)) for x in text.split()],
+        write=lambda node, **opts: " ".join(str(v) for _, v in node),
+    ))
+    assert Doc.from_format("lines", "1 2 3").to_format("lines") == "1 2 3"

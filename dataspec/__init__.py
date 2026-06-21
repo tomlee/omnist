@@ -22,6 +22,10 @@ lives in :mod:`dataspec.canonical`; this module is its public surface.
 from .canonical.document import Doc, doc
 from .canonical.dsl import parse_schema, to_dsl
 from .canonical.formats import (
+    check_json,
+    check_toml,
+    check_xml,
+    check_yaml,
     read_json,
     read_toml,
     read_xml,
@@ -32,6 +36,8 @@ from .canonical.formats import (
     write_yaml,
 )
 from .canonical.infer import infer
+from .canonical.registry import Format, formats, get_format, register_format
+from .canonical.report import Adjustment, WriteReport, finish_write
 from .canonical.schema import (
     BOOLEAN,
     DATE,
@@ -64,7 +70,7 @@ from .errors import (
     WriteError,
 )
 
-__version__ = "0.1.1a1"
+__version__ = "0.1.1a2"
 
 __all__ = [
     # errors
@@ -84,4 +90,9 @@ __all__ = [
     # codecs
     "read_json", "write_json", "read_yaml", "write_yaml",
     "read_toml", "write_toml", "read_xml", "write_xml",
+    "check_json", "check_yaml", "check_toml", "check_xml",
+    # adjustment reports
+    "WriteReport", "Adjustment", "finish_write",
+    # format registry
+    "Format", "register_format", "get_format", "formats",
 ]

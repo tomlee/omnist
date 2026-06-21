@@ -173,6 +173,44 @@ Doc.from_yaml("name: Ann\n").to_json()
 XML is single-rooted — its document element is the one top-level edge — and
 preserves interleaving on read; writing requires a single top-level edge.
 
+Writing is lenient by default: a value a format can't hold losslessly (TOML has
+no `null`; JSON/XML have no date type) is adjusted, and the adjustment is
+recorded rather than lost silently.
+
+```python
+from dataspec import doc, WriteReport, WriteError
+
+d = doc({"a": 1, "b": None})
+d.to_toml()                          # 'a = 1\n' -- 'b' dropped, silently
+
+rep = WriteReport()
+d.to_toml(report=rep)                # inspect what changed
+[(a.code, a.severity) for a in rep]  # [('null.omitted', 'warning')]
+
+d.to_toml(strict=True)               # raises WriteError instead of adjusting
+```
+
+`check_json` / `check_yaml` / `check_toml` / `check_xml` simulate a write and
+return the report without producing output. See
+[the API reference](api.md#adjustment-reports-lossy-writes) for the full list
+of adjustment codes.
+
+### Custom formats
+
+Formats are plugins — register your own and it's usable everywhere `Doc` reads
+and writes a format by name:
+
+```python
+from dataspec import Format, register_format, Doc
+
+register_format(Format(
+    name="lines",
+    read=lambda text: [("n", int(x)) for x in text.split()],
+    write=lambda node, **opts: " ".join(str(v) for _, v in node),
+))
+Doc.from_format("lines", "1 2 3").to_format("lines")    # '1 2 3'
+```
+
 ## Inferring a schema
 
 `infer(samples)` drafts a schema from example Documents:
