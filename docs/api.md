@@ -85,8 +85,19 @@ to `s`.
 ### `infer(samples, root_name="Root") -> Schema`
 Draft a schema from example Documents (`Doc`s or plain values). Cardinality
 follows observed counts (present in every sample → required; sometimes absent →
-optional; seen more than once → array); scalar children become a `Scalar` of
-the matching kind; object children become nested named records.
+optional; seen more than once → array); object children become nested named
+records.
+
+A scalar field's `Scalar` is determined from the kinds of its observed
+values: `integer` and `number` collapse to `number` (the one subset relation
+between scalars); any *other* mix of kinds for the same field (e.g. an
+`integer` and a `string`) raises `SchemaError` — a field infers to exactly
+one scalar, never a composition. The field is nullable iff any sample's
+value was `null`, independent of which kind(s) were observed; if a field
+occurred but every observed value was `null`, `infer` defaults to a
+nullable `string`. The full algorithm, with the exact collapse and default
+rules, is
+[model.md §12](design/model.md#12-inference-determining-a-fields-scalar-from-samples).
 
 ### The Python builder
 
@@ -211,6 +222,19 @@ left to `Schema.validate`, not raised here.
 | | |
 |---|---|
 | `materialize(node, schema) -> node` | apply the same upgrade directly to an already-parsed node |
+
+**Exactly which Python type each scalar deserializes to, and which raw
+values convert vs. raise**, is a per-kind table, not a single rule -- see
+[model.md §11](design/model.md#11-scalar-and-python-type) for the full
+table. The two results most worth knowing up front, since they're easy to
+get wrong intuitively:
+
+- `number` always deserializes to `float`, even from an integer literal
+  (`3 -> 3.0`, not `3`) -- `integer` (`int`) is the one scalar that's a
+  subset of it.
+- `bool` never satisfies `integer` or `number`, even though Python's `bool`
+  is technically an `int` subclass -- `true`/`false` only ever satisfy
+  `boolean`.
 
 ### Adjustment reports (lossy writes)
 
