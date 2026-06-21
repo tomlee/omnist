@@ -9,10 +9,18 @@ import pytest
 
 from dataspec.canonical import (
     Doc,
+    Format,
+    WriteReport,
+    check_json,
+    check_toml,
+    check_xml,
+    check_yaml,
     compatible_with,
     doc,
     equivalent,
     field,
+    formats,
+    get_format,
     normalize,
     parse_schema,
     read_json,
@@ -21,11 +29,14 @@ from dataspec.canonical import (
     read_yaml,
     record,
     ref,
+    register_format,
     schema,
     to_dsl,
     union,
     write_json,
+    write_toml,
     write_xml,
+    write_yaml,
 )
 from dataspec.errors import DocumentError, SchemaError, WriteError
 
@@ -41,7 +52,7 @@ class TestPublicApi:
         import dataspec as ds
 
         s = ds.parse_schema('record R { "n": integer, "s": string? }\nroot R')
-        assert ds.__version__ == "0.1.1a1"
+        assert ds.__version__ == "0.1.1a2"
         # operations are Schema methods
         assert s.validate(ds.doc({"n": 1, "s": None})).ok
         assert s.equivalent(ds.parse_schema(ds.to_dsl(s)))
@@ -313,3 +324,81 @@ class TestCodecs:
     def test_xml_write_needs_single_root(self):
         with pytest.raises(WriteError):
             write_xml([("a", 1), ("b", 2)])      # two top-level edges
+
+
+# ----------------------------------------------------------- adjustment reports
+class TestReports:
+    def test_toml_drops_null_with_a_warning(self):
+        node = doc({"a": 1, "b": None}).to_data()
+        rep = check_toml(node)
+        assert [a.code for a in rep] == ["null.omitted"]
+        assert rep.warnings and not rep.errors
+        assert "b" not in write_toml(node)
+
+    def test_toml_strict_raises_on_null(self):
+        node = doc({"a": 1, "b": None}).to_data()
+        with pytest.raises(WriteError):
+            write_toml(node, strict=True)
+
+    def test_toml_clean_write_has_empty_report(self):
+        node = doc({"a": 1}).to_data()
+        rep = WriteReport()
+        write_toml(node, report=rep)
+        assert rep.adjustments == []
+        assert bool(rep) is True
+
+    def test_json_temporal_and_special_float(self):
+        node = doc({"d": datetime.date(2024, 1, 1)}).to_data()
+        rep = check_json(node)
+        assert [a.code for a in rep] == ["temporal.stringified"]
+        node2 = [("x", float("nan"))]
+        rep2 = check_json(node2)
+        assert [a.code for a in rep2] == ["float.special"]
+        assert rep2.errors
+
+    def test_yaml_time_is_stringified(self):
+        node = doc({"t": datetime.time(9, 30)}).to_data()
+        rep = check_yaml(node)
+        assert [a.code for a in rep] == ["temporal.stringified"]
+        assert "09:30:00" in write_yaml(node)
+
+    def test_xml_sanitizes_bad_key_and_reports_temporal(self):
+        node = doc({"r": {"a b": 1, "d": datetime.date(2024, 1, 1)}}).to_data()
+        rep = check_xml(node)
+        codes = {a.code for a in rep}
+        assert "key.sanitized" in codes
+        assert "temporal.stringified" in codes
+
+    def test_report_arg_and_strict_share_events(self):
+        node = doc({"a": 1, "b": None}).to_data()
+        rep = WriteReport()
+        with pytest.raises(WriteError) as ei:
+            write_toml(node, strict=True, report=rep)
+        assert [a.code for a in rep] == ["null.omitted"]
+        assert ei.value.report.errors == [] and ei.value.report.warnings
+
+
+# ----------------------------------------------------------- format registry
+class TestRegistry:
+    def test_builtins_registered(self):
+        assert set(formats()) >= {"json", "yaml", "toml", "xml"}
+
+    def test_get_format_round_trips(self):
+        fmt = get_format("json")
+        node = fmt.read('{"a": 1}')
+        assert fmt.write(node) == '{"a": 1}'
+
+    def test_unknown_format_raises(self):
+        from dataspec.errors import DataspecError
+        with pytest.raises(DataspecError):
+            get_format("nope")
+
+    def test_register_a_plugin(self):
+        register_format(Format(
+            "lines",
+            read=lambda text: [("n", int(x)) for x in text.split()],
+            write=lambda node, **o: " ".join(str(c) for _, c in node),
+        ))
+        assert "lines" in formats()
+        d = Doc.from_format("lines", "1 2 3")
+        assert d.to_format("lines") == "1 2 3"

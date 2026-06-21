@@ -4,6 +4,32 @@ All notable changes to this project are documented here. The format is loosely
 based on [Keep a Changelog](https://keepachangelog.com/); this project is
 **alpha** and the public API may still change between releases.
 
+## [v0.1.1a2]
+
+Two features deferred from the v0.1.1a1 redesign, now implemented on the
+canonical model:
+
+- **Adjustment reports + strict mode for the codecs.** Writing to a format
+  that can't hold every value losslessly (TOML has no `null`; JSON/XML have
+  no date type; JSON has no `NaN`/`Infinity`) is lenient by default — the
+  writer adjusts the value and records it as an `Adjustment` in a
+  `WriteReport` — instead of losing it silently. `write_json` / `write_yaml`
+  / `write_toml` / `write_xml` (and the matching `Doc.to_*`) now accept
+  `report=` to inspect what changed, and `strict=True` to raise `WriteError`
+  instead of adjusting. `check_json` / `check_yaml` / `check_toml` /
+  `check_xml` simulate a write and return the report with no output.
+- **Format registry.** `register_format(Format(name, read, write))` adds a
+  custom format usable everywhere via `Doc.from_format` / `Doc.to_format`;
+  `get_format` / `formats()` look up / list what's registered. The four
+  built-ins register themselves on import.
+
+New: `dataspec.canonical.report` (`WriteReport`, `Adjustment`, `finish_write`)
+and `dataspec.canonical.registry` (`Format`, `register_format`, `get_format`,
+`formats`), both re-exported from `dataspec`. Documented in
+[the API reference](docs/api.md#adjustment-reports-lossy-writes) and
+[the guide](docs/guide.md#reading--writing-formats); covered by new tests in
+`tests/test_canonical.py` and `tests/test_docs.py`.
+
 ## [v0.1.1a1]
 
 **A breaking redesign of the core models** around the formal Data Tree /

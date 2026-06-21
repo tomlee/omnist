@@ -34,7 +34,10 @@ write_json([("tag", "x")])                    # '{"tag": "x"}'
 ## Notes
 
 - JSON has no date type; dates written from a Document go out as ISO-8601
-  strings, and the `date` / `time` / `datetime` scalar kinds accept those
-  strings on the way back in.
+  strings (reported as `temporal.stringified`), and the `date` / `time` /
+  `datetime` scalar kinds accept those strings on the way back in.
+- JSON has no `NaN`/`Infinity`; writing one is reported as `float.special`, an
+  error-severity adjustment. See
+  [adjustment reports](../api.md#adjustment-reports-lossy-writes).
 - A bare top-level array (`[1, 2, 3]`) has no labels, so it isn't a Document on
   its own — wrap it under a key.

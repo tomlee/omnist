@@ -5,26 +5,43 @@ go through the JSON-shaped grouping (``to_grouped``); XML uses repeated elements
 directly, so it preserves interleaving on read and needs a single document
 element on write.
 
-These are intentionally simpler than the v0.1 codecs (no adjustment reports yet)
-— enough to round-trip documents for the new model.  Strict/report machinery
-will return in a later phase.
+Writing is **lenient by default**: when a value can't be held losslessly (TOML
+has no ``null``; JSON/XML have no date type), the writer adjusts it and records
+the change in a :class:`~dataspec.canonical.report.WriteReport`.  Pass
+``report=`` to inspect, or ``strict=True`` to raise on any adjustment.  See
+:mod:`~dataspec.canonical.report`.
 """
 
 from __future__ import annotations
 
 import datetime as _dt
 import json as _json
+import math as _math
 import re as _re
 import warnings
-from typing import Any, Callable
+from typing import Any, Callable, Optional
 
 from ..errors import ParseError, UnsafeXMLWarning, WriteError
 from .document import _grouped, build_node
+from .report import WriteReport, finish_write
 
 
 def get_reader(name: str) -> Callable[[str], Any]:
     return {"json": read_json, "yaml": read_yaml, "toml": read_toml,
             "xml": read_xml}[name]
+
+
+def _leaves(node: Any, path: str = "$"):
+    """Yield ``(path, value)`` for every scalar leaf in a node."""
+    if isinstance(node, list):
+        counts: dict = {}
+        for label, child in node:
+            i = counts.get(label, 0)
+            counts[label] = i + 1
+            p = f"{path}.{label}" if i == 0 else f"{path}.{label}[{i}]"
+            yield from _leaves(child, p)
+    else:
+        yield path, node
 
 
 # --------------------------------------------------------------- JSON
@@ -35,8 +52,27 @@ def read_json(text: str) -> Any:
         raise ParseError(f"invalid JSON: {exc}") from exc
 
 
-def write_json(node: Any, *, indent: int = None) -> str:
-    return _json.dumps(_grouped(node), indent=indent, ensure_ascii=False, default=_iso)
+def write_json(node: Any, *, indent: Optional[int] = None, strict: bool = False,
+               report: Optional[WriteReport] = None) -> str:
+    rep = _scan_json(node)
+    text = _json.dumps(_grouped(node), indent=indent, ensure_ascii=False, default=_iso)
+    return finish_write(text, rep, strict=strict, report=report)
+
+
+def check_json(node: Any) -> WriteReport:
+    """Report what writing JSON would adjust, without producing output."""
+    return _scan_json(node)
+
+
+def _scan_json(node: Any) -> WriteReport:
+    rep = WriteReport()
+    for path, v in _leaves(node):
+        if isinstance(v, (_dt.date, _dt.time)):
+            rep.add(path, "temporal.stringified",
+                    "temporal value written as an ISO-8601 string", "warning")
+        elif isinstance(v, float) and (_math.isnan(v) or _math.isinf(v)):
+            rep.add(path, "float.special", f"{v} is not valid JSON", "error")
+    return rep
 
 
 def _iso(o: Any) -> str:
@@ -54,10 +90,32 @@ def read_yaml(text: str) -> Any:
         raise ParseError(f"invalid YAML: {exc}") from exc
 
 
-def write_yaml(node: Any) -> str:
+def write_yaml(node: Any, *, strict: bool = False,
+               report: Optional[WriteReport] = None) -> str:
     yaml = _need("yaml", "pip install pyyaml")
-    return yaml.safe_dump(_grouped(node), sort_keys=False, allow_unicode=True,
+    rep = check_yaml(node)
+    prepared = _prepare_yaml(node)
+    text = yaml.safe_dump(_grouped(prepared), sort_keys=False, allow_unicode=True,
                           default_flow_style=False)
+    return finish_write(text, rep, strict=strict, report=report)
+
+
+def check_yaml(node: Any) -> WriteReport:
+    rep = WriteReport()
+    for path, v in _leaves(node):
+        if isinstance(v, _dt.time):       # YAML carries date/datetime natively, not time
+            rep.add(path, "temporal.stringified",
+                    "time-of-day written as a string (YAML has no standalone time)",
+                    "warning")
+    return rep
+
+
+def _prepare_yaml(node: Any) -> Any:
+    if isinstance(node, list):
+        return [(label, _prepare_yaml(c)) for label, c in node]
+    if isinstance(node, _dt.time):
+        return node.isoformat()
+    return node
 
 
 # --------------------------------------------------------------- TOML
@@ -69,12 +127,39 @@ def read_toml(text: str) -> Any:
         raise ParseError(f"invalid TOML: {exc}") from exc
 
 
-def write_toml(node: Any) -> str:
+def write_toml(node: Any, *, strict: bool = False,
+               report: Optional[WriteReport] = None) -> str:
     tomli_w = _need("tomli_w", "pip install tomli_w")
-    grouped = _grouped(node)
+    rep = WriteReport()
+    stripped = _strip_nulls(node, "$", rep)        # TOML has no null
+    grouped = _grouped(stripped)
     if not isinstance(grouped, dict):
         raise WriteError("TOML needs a top-level table (the root must be an object)")
-    return tomli_w.dumps(grouped)
+    text = tomli_w.dumps(grouped)
+    return finish_write(text, rep, strict=strict, report=report)
+
+
+def check_toml(node: Any) -> WriteReport:
+    rep = WriteReport()
+    _strip_nulls(node, "$", rep)
+    return rep
+
+
+def _strip_nulls(node: Any, path: str, rep: WriteReport) -> Any:
+    """Drop edges whose value is null (TOML can't hold null), recording each."""
+    if not isinstance(node, list):
+        return node
+    out = []
+    counts: dict = {}
+    for label, child in node:
+        i = counts.get(label, 0)
+        counts[label] = i + 1
+        p = f"{path}.{label}" if i == 0 else f"{path}.{label}[{i}]"
+        if child is None:
+            rep.add(p, "null.omitted", "null value dropped (TOML has no null)", "warning")
+            continue
+        out.append((label, _strip_nulls(child, p, rep)))
+    return out
 
 
 # --------------------------------------------------------------- XML
@@ -97,17 +182,51 @@ def _xml_to_node(elem) -> Any:
     return _coerce(elem.text or "")
 
 
-def write_xml(node: Any) -> str:
+def write_xml(node: Any, *, strict: bool = False,
+              report: Optional[WriteReport] = None) -> str:
     if not (isinstance(node, list) and len(node) == 1):
         raise WriteError(
             "XML needs exactly one document element; the root node must have a "
             "single top-level edge (a single-rooted Document)")
+    rep = check_xml(node)
     import xml.etree.ElementTree as ET
     (tag, content), = node
     el = ET.Element(_xml_name(tag))
     _node_to_xml(content, el)
     _indent(el)
-    return ET.tostring(el, encoding="unicode")
+    text = ET.tostring(el, encoding="unicode")
+    return finish_write(text, rep, strict=strict, report=report)
+
+
+def check_xml(node: Any) -> WriteReport:
+    rep = WriteReport()
+    _scan_xml(node, "$", rep)
+    return rep
+
+
+def _scan_xml(node: Any, path: str, rep: WriteReport) -> None:
+    if isinstance(node, list):
+        counts: dict = {}
+        for label, child in node:
+            i = counts.get(label, 0)
+            counts[label] = i + 1
+            p = f"{path}.{label}" if i == 0 else f"{path}.{label}[{i}]"
+            if not _XML_NAME.match(label):
+                rep.add(p, "key.sanitized",
+                        f"label {label!r} isn't a valid XML name; written sanitized",
+                        "warning")
+            _scan_xml(child, p, rep)
+        return
+    v = node
+    if v is None:
+        rep.add(path, "null.omitted", "null written as an empty element", "warning")
+    elif isinstance(v, (_dt.date, _dt.time)):
+        rep.add(path, "temporal.stringified",
+                "temporal value written as text (reads back as a string)", "warning")
+    elif isinstance(v, str) and not isinstance(_coerce(v), str):
+        rep.add(path, "string.ambiguous",
+                f"string {v!r} looks like another type and reads back as that type",
+                "warning")
 
 
 def _node_to_xml(content: Any, parent) -> None:

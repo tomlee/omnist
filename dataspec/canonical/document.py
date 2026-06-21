@@ -107,8 +107,8 @@ class Doc:
 
     @classmethod
     def from_format(cls, name: str, text: str) -> "Doc":
-        from .formats import get_reader
-        return cls(get_reader(name)(text))
+        from .registry import get_format
+        return cls(get_format(name).read(text))
 
     @classmethod
     def from_json(cls, text: str) -> "Doc":
@@ -237,6 +237,10 @@ class Doc:
     def to_xml(self, **o: Any) -> str:
         from .formats import write_xml
         return write_xml(self._node, **o)
+
+    def to_format(self, name: str, **o: Any) -> str:
+        from .registry import get_format
+        return get_format(name).write(self._node, **o)
 
     def validate(self, schema):
         return schema.validate(self)

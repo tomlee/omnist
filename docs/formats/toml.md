@@ -25,8 +25,10 @@ d.to_json()    # '{"order": {"id": "A1", "items": [{"sku": "W"}, {"sku": "G"}]}}
 
 ## Notes
 
-- **No `null`.** TOML has no null value, so a Document with a `null` leaf has no
-  TOML representation — keep nullable fields out of TOML output, or omit them.
+- **No `null`.** TOML has no null value, so writing one is lenient by default:
+  the edge is dropped and recorded as a `null.omitted` adjustment (a warning).
+  `write_toml(node, report=rep)` shows it; `strict=True` raises `WriteError`
+  instead. See [adjustment reports](../api.md#adjustment-reports-lossy-writes).
 - **Top-level must be a table.** A bare scalar or array at the root isn't valid
   TOML; a single-rooted Document (one top-level key) writes cleanly.
 - TOML has native date, time, and datetime types, which read straight into the

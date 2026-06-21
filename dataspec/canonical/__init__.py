@@ -18,6 +18,10 @@ public surface.
 from .document import Doc, doc
 from .dsl import parse_schema, to_dsl
 from .formats import (
+    check_json,
+    check_toml,
+    check_xml,
+    check_yaml,
     read_json,
     read_toml,
     read_xml,
@@ -29,6 +33,11 @@ from .formats import (
 )
 from .infer import infer
 from .operations import compatible_with, equivalent, normalize
+from .registry import Format, formats, get_format, register_format
+
+# register the four built-in formats
+from .registry import _register_builtins as _rb  # noqa: E402
+from .report import Adjustment, WriteReport, finish_write
 from .schema import (
     BOOLEAN,
     DATE,
@@ -50,6 +59,8 @@ from .schema import (
     union,
 )
 
+_rb()
+
 __all__ = [
     "Doc", "doc",
     "Schema", "Record", "Union", "Ref", "Field", "ValidationResult",
@@ -59,4 +70,7 @@ __all__ = [
     "compatible_with", "equivalent", "normalize", "infer",
     "read_json", "read_yaml", "read_toml", "read_xml",
     "write_json", "write_yaml", "write_toml", "write_xml",
+    "check_json", "check_yaml", "check_toml", "check_xml",
+    "WriteReport", "Adjustment", "finish_write",
+    "Format", "register_format", "get_format", "formats",
 ]

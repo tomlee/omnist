@@ -50,4 +50,7 @@ JSON can't interleave.)
 - **Not supported** (outside the data-XML profile): attributes, mixed text and
   elements, and CDATA. A namespace prefix is stripped (`<n:a>` reads as `a`).
 - A key that isn't a legal XML element name is sanitized on write (e.g.
-  `"a b"` → `<a_b>`).
+  `"a b"` → `<a_b>`, reported as `key.sanitized`), and a date/time value is
+  written as text (`temporal.stringified`). See
+  [adjustment reports](../api.md#adjustment-reports-lossy-writes) to inspect
+  these, or `strict=True` to raise instead of adjusting.
