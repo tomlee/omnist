@@ -153,7 +153,7 @@ A node `n` conforms to a `Record R` iff:
 2. **Closedness** — every edge label in `n` is some field of `R`.
 3. **Targets** — each matching edge's target conforms to that field's `type`.
 
-A value conforms to a `Scalar` iff it matches the scalar's kind (or is `null` and the scalar is nullable). A target conforms to `Ref(N)` iff it conforms to `env[N]`.
+A value conforms to a `Scalar` iff it matches the scalar's kind (or is `null` and the scalar is nullable). A target conforms to `Ref(N)` iff it conforms to `env[N]`. "Matches the scalar's kind" is defined precisely in §11 — validation only *checks* a match (it never converts a value); §11 also covers *deserialization*, which additionally converts a matching value to a canonical Python type.
 
 **Order is ignored.** Cardinality counts edges; it never constrains their sequence. A JSON document and an interleaved XML document with the same edges (in any order) conform identically.
 
@@ -187,6 +187,89 @@ The corner cases, and how they're settled (all implemented):
 2. **Array-of-scalar → a repeated label**, uniform with array-of-record (`"tags"[0,]: string`). One mechanism (cardinality) for all "many," matching XML's repeated elements.
 3. **Bare nested arrays (`[[1,2],[3,4]]`) → forbidden for now.** Inner elements have no label, so there's no edge to give them (and XML can't express them either); reading one raises a clear error. Revisit only if a concrete need appears.
 4. **Root → a `Ref` to a single record (single-rooted).** Guarantees a lossless XML round-trip (one document element) and keeps the entry point uniform with every other definition.
+
+---
+
+## 11. Scalar and Python type
+
+A `Scalar`'s kind determines which Python type a conforming value is held as.
+**Validation and deserialization use this mapping differently**, and the
+difference is deliberate:
+
+- **Validation** (`Schema.validate`) only *checks* whether a value already in
+  the document — in whatever Python type it happens to be — matches a
+  scalar's kind. It never converts anything.
+- **Deserialization** (`materialize`, or `schema=` on a reader) additionally
+  *converts* a matching value to the canonical Python type below, succeeding
+  only when the conversion is **value-exact**, and raising `ParseError`
+  otherwise. This is unambiguous by construction: a field has exactly one
+  candidate scalar (§5), so there is never a choice between candidate
+  representations — only "does this value exactly fit the one scalar
+  declared, or not."
+
+| Scalar kind | Canonical Python type | What validation accepts | What deserialization additionally converts | What deserialization rejects |
+|---|---|---|---|---|
+| `string` | `str` | any `str` | nothing (no other type converts to `str`) | every non-`str` value |
+| `integer` | `int` | any `int` that isn't a `bool` | a `float` with no fractional part (`x.is_integer()`), e.g. `4.0 → 4` | `bool` (even though `bool` is an `int` subclass in Python); a `float` with a fractional part (`4.5`); any `str` |
+| `number` | `float` | an `int` or a `float`, neither a `bool` | an `int` is **always** upgraded to `float` (`3 → 3.0`) — see note below | `bool`; any `str` |
+| `boolean` | `bool` | any `bool` | nothing (no string `"true"`/`"false"` parsing) | every non-`bool` value |
+| `date` | `datetime.date` | a real `date` that is **not** a `datetime` (see note below); or an ISO-8601 date string (`"2024-01-01"`) | the ISO-8601 date string, to a real `date` | a real `datetime` value (even though `datetime` is a `date` subclass); a string that isn't a valid bare ISO date |
+| `time` | `datetime.time` | a real `time`; or an ISO-8601 time string (`"12:00:00"`) | the ISO-8601 time string, to a real `time` | a string that isn't a valid ISO time |
+| `datetime` | `datetime.datetime` | a real `datetime`; or a full ISO-8601 timestamp string that is **not** also a bare date string | the timestamp string, to a real `datetime` | a bare ISO date string (`"2024-01-01"` alone never satisfies `datetime`, only `date`); a string that isn't a valid full timestamp |
+
+Notes:
+
+- **`bool` never satisfies `integer` or `number`.** Python's `bool` is an
+  `int` subclass, so `isinstance(True, int)` is `True` — but a schema's
+  `integer`/`number` scalar explicitly excludes it. `true`/`false` only ever
+  satisfy `boolean`.
+- **`number` always deserializes to `float`, even from an integer literal.**
+  A JSON/YAML/TOML value `3` read against a `"v": number` field materializes
+  as the Python `float` `3.0`, not the `int` `3` — `number` means "the
+  `float` representation," and `integer` (`int`) is the one scalar kind that
+  is a subset of it (the same subset relation `compatible_with`/`normalize`
+  and `infer`, §12 step 2, use).
+- **`datetime` is a subclass of `date` in Python**, and
+  `datetime.fromisoformat` will happily parse a bare date string into a
+  `datetime` at midnight — both are explicitly excluded so `date` and
+  `datetime` stay mutually exclusive for *both* the real-object form and the
+  string form. A bare date string only ever satisfies `date`; a real
+  `datetime.datetime(2024, 1, 1)` (even at midnight) only ever satisfies
+  `datetime`, never `date`.
+- **Shape mismatches are validation's job, not deserialization's.** If a
+  value's *structure* doesn't match what's expected at all (a record where a
+  scalar is expected, or vice versa) or a field is missing/unexpected,
+  `materialize` passes the node through unchanged for `Schema.validate` to
+  flag — it only ever converts a value it can identify as belonging to a
+  known field's scalar.
+
+## 12. Inference: determining a field's `Scalar` from samples
+
+`infer(samples)` drafts a `Scalar` for each scalar-valued field as follows,
+given the values observed across all samples for that field's label:
+
+1. **Collect the kind of every non-`null` value**, using the same kind names
+   as §11's table (a Python `bool` → `boolean`, an `int` → `integer`, a
+   `float` → `number`, a `datetime.datetime` → `datetime`, a `datetime.date`
+   → `date`, a `datetime.time` → `time`, anything else → `string`).
+2. **Collapse `integer` into `number`** if both were observed — the one
+   subset relation between scalars (every integer value is also a number).
+   No other pair collapses.
+3. **If more than one kind remains after the collapse, raise `SchemaError`.**
+   A field can be inferred to exactly one scalar or not at all; e.g. samples
+   with `1` and `"x"` for the same label raise, but `1` and `2.5` infer
+   `number`.
+4. **The field is `nullable` iff any sample's value was `null`.** This is
+   fully orthogonal to step 1–3: a label with values `1`, `null` infers
+   `integer?`, never raising on account of the `null`.
+5. **If every observed value was `null`** (the label occurred in at least
+   one sample, but never with a non-`null` value), there is no kind
+   information to infer from. `infer` defaults to `Scalar("string",
+   nullable=True)`. (A label that never occurs in *any* sample — including
+   one that's always an empty array — gets no field at all; that's a
+   property of the cardinality bookkeeping in step-by-step §10(2), not of
+   this algorithm, since this algorithm only ever runs for a label that
+   occurred at least once.)
 
 ---
 

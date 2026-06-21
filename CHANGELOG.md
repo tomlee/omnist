@@ -4,6 +4,28 @@ All notable changes to this project are documented here. The format is loosely
 based on [Keep a Changelog](https://keepachangelog.com/); this project is
 **alpha** and the public API may still change between releases.
 
+## [v0.1.1a10]
+
+Documentation only, no code changes. Added two formal sections to
+`docs/design/model.md`:
+
+- **§11, Scalar and Python type** — a precise per-kind table of which
+  Python type each scalar deserializes to, which raw values convert vs.
+  raise, and how that differs from what `Schema.validate` merely checks
+  (it never converts). Spells out two easy-to-miss results: `number`
+  always deserializes to `float` even from an integer literal, and `bool`
+  never satisfies `integer`/`number` despite being an `int` subclass.
+- **§12, Inference: determining a field's Scalar from samples** — the
+  exact algorithm `infer` uses: per-label kind collection, the
+  integer/number collapse, the raise-on-other-mixed-kinds rule, and the
+  nullable-string fallback when a field occurred but every value was
+  `null` (a field that never occurs in any sample at all gets no field at
+  all, which is the cardinality bookkeeping, not this algorithm).
+
+`docs/api.md`'s `infer()` and "Schema-directed deserialization" entries
+now summarize these rules and link to the formal sections instead of
+leaving the Scalar↔Python-type mapping implicit.
+
 ## [v0.1.1a9]
 
 A pre-publish review pass: no new features, but a real bug fix and a
