@@ -344,7 +344,7 @@ def test_doc_and_build_node_round_trip_from_plain_python_value(value):
         expected = build_node(value)
     except DocumentError:
         return  # a legal rejection (e.g. a bare list nested in a list)
-    assert doc(value).to_data() == expected
+    assert nan_safe_equal(doc(value).to_data(), expected)
     # and the resulting node round-trips through OML exactly, same as any node
     back = read_oml(write_oml(expected))
     assert nan_safe_equal(back, expected)
