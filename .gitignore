@@ -7,3 +7,5 @@ dist/
 build/
 .venv/
 venv/
+.coverage
+.hypothesis/

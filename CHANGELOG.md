@@ -4,6 +4,18 @@ All notable changes to this project are documented here. The format is loosely
 based on [Keep a Changelog](https://keepachangelog.com/); this project is
 **alpha** and the public API may still change between releases.
 
+## [v0.1.5]
+
+- Fix: `tests/test_fuzz.py::test_doc_and_build_node_round_trip_from_plain_python_value`
+  compared two structures that could contain a bare `nan` scalar with plain
+  `==`, which fails for any float `nan` (`nan != nan` in Python) even though
+  the round-trip itself is correct — a deterministic test failure whenever
+  Hypothesis happened to generate a NaN value, found immediately after the
+  fuzz-test PR (#73) landed. Fixed by using the suite's existing
+  `nan_safe_equal` helper for this comparison too, matching how the
+  adjacent OML round-trip assertion in the same test already handled it.
+  No library behavior changed — test-only fix. (#75)
+
 ## [v0.1.4]
 
 - Fix: `write_oml` wrote the labels `"inf"` and `"nan"` as bare (unquoted)
