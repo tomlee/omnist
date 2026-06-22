@@ -1,6 +1,6 @@
-"""The Document — a canonical tree of ordered, labeled edges.
+"""The Document model — a canonical tree of ordered, labeled edges.
 
-A Document is a node, which is either
+A Document model **node** is either
 
 * a **leaf** holding a scalar value (``str``/``int``/``float``/``bool``/
   ``datetime`` values, or ``None``), or
@@ -15,8 +15,9 @@ The canonical Python form of a node is therefore::
 
 This single shape represents every supported format canonically, including
 XML's interleaved repeated elements, which a dict-with-array-values cannot.
-``Doc`` is a thin, guarded wrapper with navigation helpers.  Order is preserved
-(it is data); schema validation ignores it.  See ``docs/design/model.md``.
+``Doc`` is a thin, guarded wrapper around a node, with navigation helpers.
+Order is preserved (it is data); schema validation ignores it.  See
+``docs/design/model.md``.
 """
 
 from __future__ import annotations
@@ -81,7 +82,7 @@ def _children(v: Any, path: str, depth: int, seen: frozenset) -> Iterator[Any]:
         for i, item in enumerate(v):
             if isinstance(item, (list, tuple)):
                 raise DocumentError(
-                    f"{path}[{i}]: an array of arrays has no Data-Tree form")
+                    f"{path}[{i}]: an array of arrays has no labeled-edge form")
             yield build_node(item, f"{path}[{i}]", depth + 1, seen)
     else:
         yield build_node(v, path, depth, seen)

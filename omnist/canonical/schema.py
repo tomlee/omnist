@@ -119,8 +119,8 @@ Type = Union[Ref, Scalar]
 
 
 class Field:
-    """One labeled edge of a record: ``label`` of ``type``, occurring
-    ``[min, max]`` times (``max=None`` is unbounded)."""
+    """One named, cardinality-bound field slot of a record: ``label`` of
+    ``type``, occurring ``[min, max]`` times (``max=None`` is unbounded)."""
 
     __slots__ = ("label", "type", "min", "max")
 

@@ -11,6 +11,7 @@ Start here, in roughly this order:
 | **[API reference](api.md)** | Every public name: `Doc`, `Schema`, the builders, codecs, validation results, and exceptions, with signatures. |
 | **[Formats](formats/overview.md)** | How each format maps to the model and its caveats — [OML](formats/oml.md) · [JSON](formats/json.md) · [YAML](formats/yaml.md) · [TOML](formats/toml.md) · [XML](formats/xml.md). |
 | **[Model spec](design/model.md)** | The formal definitions of the Document and Schema models — self-contained, no paper required. |
+| **[Glossary](glossary.md)** | One definition per term used across the docs and code, grouped by concept area. |
 
 ## The model in one minute
 

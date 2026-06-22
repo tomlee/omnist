@@ -118,6 +118,8 @@ Full index: **[docs/](docs/README.md)**.
   [XML](docs/formats/xml.md)).
 - **[Model spec](docs/design/model.md)** — the formal Document and Schema models,
   self-contained and plain (no paper required).
+- **[Glossary](docs/glossary.md)** — one definition per term used across the
+  docs and code, grouped by concept area.
 
 ## Status
 
