@@ -42,31 +42,99 @@ survive on read — `<m/><x/><m/>` reads as `[(m,…), (x,…), (m,…)]`, the o
 a dict-with-arrays can't represent. (Projecting to JSON groups the `m`s, since
 JSON can't interleave.)
 
+## Reading
+
+### Without a schema
+
+Element text is untyped, but `read_xml`'s coercion heuristic does try
+`int`/`float`/`bool` before falling back to `str` — it does **not** attempt
+any date/time coercion, since a date string is indistinguishable from any
+other string by spelling alone without a declared scalar to check it against:
+
+```python
+from omnist import read_xml
+
+read_xml('<r><n>30</n><f>3.5</f><ok>true</ok><d>2024-01-01</d></r>')
+# [('r', [('n', 30), ('f', 3.5), ('ok', True), ('d', '2024-01-01')])]
+```
+
+`<n>30</n>` reads as the integer `30` and `<ok>true</ok>` as `True`, but
+`<d>2024-01-01</d>` stays the plain `str` `'2024-01-01'` — XML has no date
+type and `read_xml` doesn't guess one from the shape of the text.
+
+### With a schema
+
+`schema=` upgrades a leaf to match the schema's declared scalar wherever the
+conversion is value-exact — this is what turns the date string above into a
+real `datetime.date`:
+
+```python
+from omnist import parse_schema, read_xml
+
+s = parse_schema('record Inner { "d": date, "n": number }\n'
+                  'record R { "r": Inner }\nroot R')
+read_xml('<r><d>2024-01-01</d><n>3</n></r>', schema=s)
+# [('r', [('d', datetime.date(2024, 1, 1)), ('n', 3.0)])]
+```
+
+(The schema's shape has to mirror the document's — XML always wraps its
+content in a single document element, here `<r>`, so the schema needs a
+record for that wrapper too.) See
+[schema-directed deserialization](../deserialization.md) for the full
+conversion rules. `Doc.from_xml(text, schema=s)` is the same conversion
+through the `Doc` wrapper — it just calls `read_xml` underneath:
+
+```python
+from omnist import Doc
+
+Doc.from_xml('<r><d>2024-01-01</d><n>3</n></r>', schema=s).to_data()
+# [('r', [('d', datetime.date(2024, 1, 1)), ('n', 3.0)])]
+```
+
+## Writing
+
+```python
+from omnist import write_xml, Doc
+
+write_xml([("order", [("id", "A1")])])
+# '<order>\n  <id>A1</id>\n</order>\n'
+
+Doc.of({"order": {"id": "A1"}}).to_xml()
+# '<order>\n  <id>A1</id>\n</order>\n'
+```
+
+> A key that isn't a legal XML element name is sanitized on write (e.g.
+> `"a b"` → `<a_b>`, reported as `key.sanitized`), and a date/time value is
+> written as text (`temporal.stringified`).
+>
+> **A string that looks like another type reads back as that type.** If you
+> write the string `"30"` as a leaf, it round-trips as the *integer* `30`,
+> not the string `"30"` — `write_xml` reports this ahead of time as
+> `string.ambiguous` so you know it won't come back the way it went in.
+>
+> **An empty internal node (zero edges, `[]`) is indistinguishable from an
+> empty-string leaf (`""`)** once written: both serialize to `<tag />`, and
+> `read_xml` always reconstructs the empty-string leaf. Writing `[]` is
+> reported as `shape.empty_ambiguous` so you know ahead of time that it won't
+> round-trip; writing `""` round-trips fine and is not flagged.
+>
+> **A string containing a character XML 1.0 cannot represent** (most C0
+> control characters -- everything below U+0020 except tab/LF/CR -- or a
+> UTF-16 surrogate) would otherwise produce text that isn't well-formed XML,
+> so `write_xml` replaces each such character with U+FFFD (the standard
+> replacement character) and reports `string.illegal_xml_char` with
+> `"error"` severity -- `strict=True` raises instead of silently substituting.
+>
+> **A string containing `\r`** is legal XML, but XML mandates line-ending
+> normalization on parse (`\r` and `\r\n` both become `\n`), so it doesn't
+> round-trip byte-for-byte. `write_xml` leaves `\r` as-is (no substitution
+> needed) and reports it as `string.cr_normalized` so you know ahead of time
+> the read-back value will differ.
+>
+> See [adjustment reports](../api.md#adjustment-reports-lossy-writes) to
+> inspect any of these, or `strict=True` to raise instead of adjusting.
+
 ## Notes
 
-- Element **text is untyped**, so scalars are recovered with best-effort typing
-  on read: `<n>30</n>` reads as the integer `30`, `<ok>true</ok>` as `True`. If
-  exact types matter, validate against a schema or prefer JSON/TOML.
 - **Not supported** (outside the data-XML profile): attributes, mixed text and
   elements, and CDATA. A namespace prefix is stripped (`<n:a>` reads as `a`).
-- A key that isn't a legal XML element name is sanitized on write (e.g.
-  `"a b"` → `<a_b>`, reported as `key.sanitized`), and a date/time value is
-  written as text (`temporal.stringified`). See
-  [adjustment reports](../api.md#adjustment-reports-lossy-writes) to inspect
-  these, or `strict=True` to raise instead of adjusting.
-- **An empty internal node (zero edges, `[]`) is indistinguishable from an
-  empty-string leaf (`""`)** once written: both serialize to `<tag />`, and
-  `read_xml` always reconstructs the empty-string leaf. Writing `[]` is
-  reported as `shape.empty_ambiguous` so you know ahead of time that it won't
-  round-trip; writing `""` round-trips fine and is not flagged.
-- **A string containing a character XML 1.0 cannot represent** (most C0
-  control characters -- everything below U+0020 except tab/LF/CR -- or a
-  UTF-16 surrogate) would otherwise produce text that isn't well-formed XML,
-  so `write_xml` replaces each such character with U+FFFD (the standard
-  replacement character) and reports `string.illegal_xml_char` with
-  `"error"` severity -- `strict=True` raises instead of silently substituting.
-- **A string containing `\r`** is legal XML, but XML mandates line-ending
-  normalization on parse (`\r` and `\r\n` both become `\n`), so it doesn't
-  round-trip byte-for-byte. `write_xml` leaves `\r` as-is (no substitution
-  needed) and reports it as `string.cr_normalized` so you know ahead of time
-  the read-back value will differ.
