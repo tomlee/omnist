@@ -123,8 +123,91 @@ node == built.to_data()    # True -- identical Document, two different sources
 This is what "lossless" means concretely: there is no OML feature that
 needs a special case in the builder, and no Document shape the builder can
 make that OML can't spell out (every scalar type, `null`, repeats,
-interleaving, arbitrary nesting). `write_oml(node)` (or `Doc(node).to_oml()`)
-goes the other direction, turning either source's node back into OML text.
+interleaving, arbitrary nesting).
+
+## Reading
+
+### Without a schema
+
+Because every OML scalar is already exactly typed by its own literal
+spelling (the two tables above), reading OML without a schema already hands
+back the exact right Python type for every leaf — there's no separate
+coercion step the way there is for JSON/XML, and no "before" picture that
+differs from the "after" one for any *unquoted* literal:
+
+```python
+from omnist import read_oml
+
+read_oml('d: 2024-01-01\nn: 3')
+# [('d', datetime.date(2024, 1, 1)), ('n', 3)]
+type(dict(read_oml('d: 2024-01-01\nn: 3'))['d'])
+# <class 'datetime.date'>
+```
+
+The one case that *isn't* already typed is a value written as a quoted
+string — `"2024-01-01"` is unambiguously a `str` by its own spelling (OML
+has no separate date literal that also happens to be quotable), so it stays
+a `str` unless a schema says otherwise:
+
+```python
+read_oml('s: "2024-01-01"')
+# [('s', '2024-01-01')]
+type(dict(read_oml('s: "2024-01-01"'))['s'])
+# <class 'str'>
+```
+
+### With a schema: validation, not type-upgrading
+
+Like every other format, `read_oml(text, schema=...)` runs the leaves
+through the same schema-directed conversion described in
+[schema-directed deserialization](../deserialization.md). For OML this
+matters less for *type-upgrading* than it does for the other formats,
+precisely because OML's literal syntax already produces the exact right
+type for any unquoted scalar — `schema=` is a no-op for `d: 2024-01-01`
+above. Where it does still convert is the quoted-string case (the one OML
+spelling that's deliberately ambiguous about whether it's "just a string"
+or "a date written defensively in quotes"):
+
+```python
+from omnist import parse_schema, Doc, read_oml
+
+s = parse_schema('record R { "d": date, "n": number }\nroot R')
+read_oml('d: "2024-01-01"\nn: 3', schema=s)
+# [('d', datetime.date(2024, 1, 1)), ('n', 3.0)]
+```
+
+`Doc.from_oml(text, schema=s)` is the same conversion through the `Doc`
+wrapper — it just calls `read_oml` underneath:
+
+```python
+Doc.from_oml('d: "2024-01-01"\nn: 3', schema=s).to_data()
+# [('d', datetime.date(2024, 1, 1)), ('n', 3.0)]
+```
+
+Once read, the result **validates** the same way regardless of format (see
+[the Schema model & DSL](../schema.md) for the schema side of this) — for
+OML, `Schema.validate` is the main reason to pass a schema at all, since
+shape and field-presence problems (a missing field, the wrong cardinality)
+are exactly what validation — not deserialization — catches.
+
+## Writing
+
+```python
+from omnist import write_oml, Doc
+
+write_oml([("name", "Ada")])          # 'name: "Ada"'
+Doc.of({"name": "Ada"}).to_oml()      # 'name: "Ada"'
+```
+
+> OML is the one format with no `WriteReport` adjustments: `check_oml`
+> always returns an empty report, because every Document shape (all seven
+> scalars, `null`, repeats, interleaving, multiple top-level edges) maps
+> onto OML without loss. There is no `strict=`/`report=` machinery on
+> `write_oml` for the same reason.
+>
+> The canonical writer always emits `LF` newlines, 2-space indentation, and
+> the minimal string-escape form (`\"` and `\\` plus literal Unicode) — same
+> input always produces the same output (useful for diffing/snapshotting).
 
 ## Strings: escaping, raw, and multiline
 
@@ -178,29 +261,8 @@ limit of 200, matching the Document model's own bound — both raise
 `ParseError` rather than letting a pathological input hang or crash the
 process.
 
-## Schema-directed read and validation
-
-Like every other format, `read_oml(text, schema=...)` upgrades leaves to
-match a schema, and the result validates the same way (see
-[the Schema model & DSL](../schema.md) for the schema side of this):
-
-```python
-from omnist import parse_schema, Doc
-
-s = parse_schema('record R { "d": date, "n": number }\nroot R')
-read_oml('d: "2024-01-01"\nn: 3', schema=s)
-# [('d', datetime.date(2024, 1, 1)), ('n', 3.0)]
-```
-
 ## Notes
 
-- OML is the one format with no `WriteReport` adjustments: `check_oml`
-  always returns an empty report, because every Document shape (all seven
-  scalars, `null`, repeats, interleaving, multiple top-level edges) maps
-  onto OML without loss.
-- The canonical writer always emits `LF` newlines, 2-space indentation, and
-  the minimal string-escape form — same input always produces the same
-  output (useful for diffing/snapshotting).
 - Not yet implemented: a few further OML-Extended conveniences from the
   design draft — digit separators (`1_000_000`), non-decimal integer
   literals (`0x1F`, `0o17`, `0b1010`), the pair-free astral escape

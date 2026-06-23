@@ -16,35 +16,79 @@ d.to_json()                      # '{"name": "Ann", "tags": ["x", "y"]}'
   label): `{"tags": ["x", "y"]}` → `[(tags, "x"), (tags, "y")]`.
 - A nested object becomes a nested node; scalars are leaves.
 
-## Writing back
+## Reading
 
-`write_json` groups same-label edges back into a JSON array. A label seen more
-than once becomes a list; a label seen exactly once stays a single value.
+### Without a schema
+
+JSON has no native date/time type, so a date-looking string comes back as a
+plain `str` — there's nothing else it could be:
 
 ```python
-write_json([("tag", "x"), ("tag", "y")])     # '{"tag": ["x", "y"]}'
-write_json([("tag", "x")])                    # '{"tag": "x"}'
+from omnist import read_json
+
+read_json('{"d": "2024-01-01", "n": 3}')
+# [('d', '2024-01-01'), ('n', 3)]
+type(dict(read_json('{"d": "2024-01-01", "n": 3}'))['d'])
+# <class 'str'>
 ```
 
-> **The count-1 rule.** A *single-element* array can't be told apart from a
-> single value — both are one edge — so it always serializes as a bare value;
-> a label seen more than once always serializes as a list. `write_json` (like
-> every writer) never takes a schema, by design — a writer serializes the
-> Document exactly as it is, with no schema-driven override of this rule.
-> Schema awareness is read-side only: see
-> [schema-directed deserialization](../guide.md#schema-directed-deserialization).
-> See also [model spec §9](../design/model.md#9-resolved-decisions).
+### With a schema
+
+`schema=` upgrades each leaf to match the schema's declared scalar, wherever
+the conversion is value-exact — here the date string becomes a real
+`datetime.date`, and the integer `3` becomes the `float` `3.0` (a `number`
+field always materializes as `float`). See
+[schema-directed deserialization](../deserialization.md) for the full
+conversion rules.
+
+```python
+from omnist import parse_schema, read_json
+
+s = parse_schema('record R { "d": date, "n": number }\nroot R')
+read_json('{"d": "2024-01-01", "n": 3}', schema=s)
+# [('d', datetime.date(2024, 1, 1)), ('n', 3.0)]
+```
+
+`Doc.from_json(text, schema=s)` is the same conversion through the `Doc`
+wrapper — `Doc.from_json` just calls `read_json` underneath:
+
+```python
+from omnist import Doc
+
+Doc.from_json('{"d": "2024-01-01", "n": 3}', schema=s).to_data()
+# [('d', datetime.date(2024, 1, 1)), ('n', 3.0)]
+```
+
+## Writing
+
+`write_json` groups same-label edges back into a JSON array. A label seen more
+than once becomes a list; a label seen exactly once stays a single value (the
+**count-1 rule**: a single-element array can't be told apart from a single
+value, so it always serializes as a bare value). `write_json` (like every
+writer) never takes a schema — a writer serializes the Document exactly as it
+is, with no schema-driven override of this rule. Schema awareness is read-side
+only.
+
+```python
+from omnist import write_json, Doc
+
+write_json([("tag", "x"), ("tag", "y")])     # '{"tag": ["x", "y"]}'
+write_json([("tag", "x")])                    # '{"tag": "x"}'
+
+Doc.of({"tag": ["x", "y"]}).to_json()         # '{"tag": ["x", "y"]}'
+```
+
+> JSON has no date type, so a `date`/`time`/`datetime` leaf is written out as
+> an ISO-8601 string (reported as `temporal.stringified`), and reads back as
+> a plain `str` unless `schema=` is given on the way back in. See
+> [adjustment reports](../api.md#adjustment-reports-lossy-writes).
 
 ## Notes
 
-- JSON has no date type; dates written from a Document go out as ISO-8601
-  strings (reported as `temporal.stringified`), and the `date` / `time` /
-  `datetime` scalars accept those strings on the way back in — `date`,
-  `time`, and `datetime` are mutually exclusive even for strings, so
-  `"2024-01-01"` satisfies only `date`, not `datetime` (it has no time
-  component to satisfy it with).
 - JSON has no `NaN`/`Infinity`; writing one is reported as `float.special`, an
-  error-severity adjustment. See
-  [adjustment reports](../api.md#adjustment-reports-lossy-writes).
+  error-severity adjustment.
+- `date`, `time`, and `datetime` strings are mutually exclusive even before a
+  schema is involved: `"2024-01-01"` could only ever satisfy `date`, not
+  `datetime` (it has no time component to satisfy it with).
 - A bare top-level array (`[1, 2, 3]`) has no labels, so it isn't a Document on
   its own — wrap it under a key.

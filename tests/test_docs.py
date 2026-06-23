@@ -481,3 +481,118 @@ root Team
     assert d.to_json() == (
         '{"name": "Platform", "members": '
         '[{"name": "Ann", "role": "dev"}, {"name": "Bob", "role": "pm"}]}')
+
+
+
+def test_formats_json_reading_no_schema():
+    assert read_json('{"d": "2024-01-01", "n": 3}') == [("d", "2024-01-01"), ("n", 3)]
+    assert isinstance(dict(read_json('{"d": "2024-01-01", "n": 3}'))["d"], str)
+
+
+def test_formats_json_reading_with_schema():
+    import datetime
+    s = parse_schema('record R { "d": date, "n": number }\nroot R')
+    assert read_json('{"d": "2024-01-01", "n": 3}', schema=s) == \
+        [("d", datetime.date(2024, 1, 1)), ("n", 3.0)]
+    assert Doc.from_json('{"d": "2024-01-01", "n": 3}', schema=s).to_data() == \
+        [("d", datetime.date(2024, 1, 1)), ("n", 3.0)]
+
+
+def test_formats_json_writing():
+    assert Doc.of({"tag": ["x", "y"]}).to_json() == '{"tag": ["x", "y"]}'
+
+
+def test_formats_yaml_reading_no_schema():
+    import datetime
+    node = read_yaml("d: 2024-01-01")
+    assert node == [("d", datetime.date(2024, 1, 1))]
+    assert isinstance(dict(node)["d"], datetime.date)
+    node2 = read_yaml("dt: 2024-01-01T12:00:00")
+    assert node2 == [("dt", datetime.datetime(2024, 1, 1, 12, 0))]
+
+
+def test_formats_yaml_reading_with_schema():
+    import datetime
+    s = parse_schema('record R { "d": date, "n": number }\nroot R')
+    assert read_yaml("d: 2024-01-01\nn: 3", schema=s) == \
+        [("d", datetime.date(2024, 1, 1)), ("n", 3.0)]
+    assert Doc.from_yaml("d: 2024-01-01\nn: 3", schema=s).to_data() == \
+        [("d", datetime.date(2024, 1, 1)), ("n", 3.0)]
+
+
+def test_formats_yaml_writing():
+    import datetime
+
+    from omnist import write_yaml
+    assert write_yaml([("name", "Ada"), ("born", datetime.date(1815, 12, 10))]) == \
+        "name: Ada\nborn: 1815-12-10\n"
+    assert Doc.of({"name": "Ada"}).to_yaml() == "name: Ada\n"
+
+
+def test_formats_toml_reading_no_schema():
+    import datetime
+    node = read_toml("d = 2024-01-01")
+    assert node == [("d", datetime.date(2024, 1, 1))]
+    assert isinstance(dict(node)["d"], datetime.date)
+    assert read_toml("t = 12:00:00") == [("t", datetime.time(12, 0))]
+    assert read_toml("dt = 2024-01-01T12:00:00") == \
+        [("dt", datetime.datetime(2024, 1, 1, 12, 0))]
+
+
+def test_formats_toml_reading_with_schema():
+    import datetime
+    s = parse_schema('record R { "d": date, "n": number }\nroot R')
+    assert read_toml("d = 2024-01-01\nn = 3", schema=s) == \
+        [("d", datetime.date(2024, 1, 1)), ("n", 3.0)]
+    assert Doc.from_toml("d = 2024-01-01\nn = 3", schema=s).to_data() == \
+        [("d", datetime.date(2024, 1, 1)), ("n", 3.0)]
+
+
+def test_formats_toml_writing():
+    from omnist import write_toml
+    assert write_toml([("id", "A1")]) == 'id = "A1"\n'
+    assert Doc.of({"id": "A1"}).to_toml() == 'id = "A1"\n'
+
+
+def test_formats_xml_reading_no_schema():
+    node = read_xml("<r><n>30</n><f>3.5</f><ok>true</ok><d>2024-01-01</d></r>")
+    assert node == [("r", [("n", 30), ("f", 3.5), ("ok", True), ("d", "2024-01-01")])]
+
+
+def test_formats_xml_reading_with_schema():
+    import datetime
+    s = parse_schema('record Inner { "d": date, "n": number }\n'
+                      'record R { "r": Inner }\nroot R')
+    node = read_xml("<r><d>2024-01-01</d><n>3</n></r>", schema=s)
+    assert node == [("r", [("d", datetime.date(2024, 1, 1)), ("n", 3.0)])]
+    assert Doc.from_xml("<r><d>2024-01-01</d><n>3</n></r>", schema=s).to_data() == node
+
+
+def test_formats_xml_writing():
+    from omnist import write_xml
+    assert write_xml([("order", [("id", "A1")])]) == "<order>\n  <id>A1</id>\n</order>\n"
+    assert Doc.of({"order": {"id": "A1"}}).to_xml() == "<order>\n  <id>A1</id>\n</order>\n"
+
+
+def test_formats_oml_reading_no_schema():
+    import datetime
+    node = read_oml("d: 2024-01-01\nn: 3")
+    assert node == [("d", datetime.date(2024, 1, 1)), ("n", 3)]
+    assert isinstance(dict(node)["d"], datetime.date)
+    node2 = read_oml('s: "2024-01-01"')
+    assert node2 == [("s", "2024-01-01")]
+    assert isinstance(dict(node2)["s"], str)
+
+
+def test_formats_oml_reading_with_schema():
+    import datetime
+    s = parse_schema('record R { "d": date, "n": number }\nroot R')
+    node = read_oml('d: "2024-01-01"\nn: 3', schema=s)
+    assert node == [("d", datetime.date(2024, 1, 1)), ("n", 3.0)]
+    assert Doc.from_oml('d: "2024-01-01"\nn: 3', schema=s).to_data() == node
+
+
+def test_formats_oml_writing():
+    from omnist import write_oml
+    assert write_oml([("name", "Ada")]) == 'name: "Ada"'
+    assert Doc.of({"name": "Ada"}).to_oml() == 'name: "Ada"'
