@@ -1,6 +1,7 @@
 # Omnist
 
 [![tests](https://github.com/omnist-dev/omnist/actions/workflows/test.yml/badge.svg)](https://github.com/omnist-dev/omnist/actions/workflows/test.yml)
+[![pypi](https://img.shields.io/pypi/v/omnist)](https://pypi.org/project/omnist/)
 [![python](https://img.shields.io/badge/python-3.11%2B-blue)](#installation)
 [![license](https://img.shields.io/badge/license-Apache--2.0-lightgrey)](LICENSE)
 [![status](https://img.shields.io/badge/status-alpha-orange)](#status)
@@ -155,8 +156,9 @@ Full index: **[docs/](docs/README.md)**, also browsable as a site at
 
 ## Status
 
-Omnist is **alpha** (v0.2.2), built around a small, self-contained
-formalism; the public API may still change before a stable release.
+Omnist is **alpha**, built around a small, self-contained formalism; the
+public API may still change before a stable release. See the PyPI badge
+above (or [CHANGELOG.md](CHANGELOG.md)) for the current version.
 
 Feedback and bug reports welcome:
 <https://github.com/omnist-dev/omnist/issues>. See [SECURITY.md](SECURITY.md) for
