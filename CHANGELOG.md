@@ -4,6 +4,12 @@ All notable changes to this project are documented here. The format is loosely
 based on [Keep a Changelog](https://keepachangelog.com/); this project is
 **alpha** and the public API may still change between releases.
 
+## [v0.2.9] — `omnist --version`
+
+Adds `omnist --version` (prints `<prog> <version>`, exit `0`) and a
+one-line `description=` on the top-level parser, so `omnist --help`
+explains what the tool is before listing subcommands.
+
 ## [v0.2.8] — `omnist convert --strict`/`--report`, `omnist check`
 
 Completes the CLI implementation arc (see `docs/design/cli-spec.md`) —

@@ -12,6 +12,9 @@ it — see `tests/test_cli_examples.py`, which runs every one of these and
 fails CI if the output ever drifts from what's shown here. Run them
 yourself from the repo root.
 
+`omnist --version` prints the installed version and exits; `omnist --help`
+(or `omnist <command> --help`) prints usage.
+
 ## `omnist format`
 
 ```

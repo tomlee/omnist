@@ -669,3 +669,16 @@ class TestTopLevel:
         with pytest.raises(SystemExit) as exc:
             main(["bogus"])
         assert exc.value.code == 2
+
+    def test_version_flag_prints_version_and_exits_0(self, capsys):
+        import omnist
+        with pytest.raises(SystemExit) as exc:
+            main(["--version"])
+        assert exc.value.code == 0
+        assert capsys.readouterr().out == f"omnist {omnist.__version__}\n"
+
+    def test_help_includes_description(self, capsys):
+        with pytest.raises(SystemExit) as exc:
+            main(["--help"])
+        assert exc.value.code == 0
+        assert "canonical data model" in capsys.readouterr().out

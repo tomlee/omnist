@@ -21,6 +21,7 @@ from . import (
     ValidationResult,
     WriteError,
     WriteReport,
+    __version__,
     check_json,
     check_oml,
     check_toml,
@@ -225,7 +226,13 @@ def _cmd_schema_equivalent(args: argparse.Namespace) -> int:
 
 
 def _build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="omnist")
+    parser = argparse.ArgumentParser(
+        prog="omnist",
+        description="One canonical data model for JSON, YAML, TOML, XML, and OML "
+                    "-- read, validate, and write any of them. "
+                    "See docs/cli.md for the full command reference.")
+    parser.add_argument(
+        "--version", action="version", version=f"%(prog)s {__version__}")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     format_p = subparsers.add_parser(
