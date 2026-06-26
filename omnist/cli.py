@@ -15,6 +15,7 @@ from typing import Any, Optional, Sequence
 
 from . import (
     Doc,
+    DocumentError,
     ParseError,
     SchemaError,
     ValidationResult,
@@ -318,7 +319,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     args = parser.parse_args(argv)
     try:
         return args.func(args)
-    except (ParseError, SchemaError, WriteError, OSError) as exc:
+    except (ParseError, SchemaError, WriteError, DocumentError, OSError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
 
